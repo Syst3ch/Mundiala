@@ -990,32 +990,9 @@ export default function App() {
   const isAdmin = session.user.email === ADMIN_EMAIL;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased pb-10" dir="rtl">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased pb-28" dir="rtl">
       <style>{`
-        .mundiala-tabs-scroll {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(16, 185, 129, 0.75) rgba(15, 23, 42, 0.75);
-        }
-
-        .mundiala-tabs-scroll::-webkit-scrollbar {
-          height: 7px;
-        }
-
-        .mundiala-tabs-scroll::-webkit-scrollbar-track {
-          background: rgba(15, 23, 42, 0.85);
-          border-radius: 999px;
-        }
-
-        .mundiala-tabs-scroll::-webkit-scrollbar-thumb {
-          background: linear-gradient(90deg, #10b981, #f59e0b);
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.18);
-        }
-
-        .mundiala-tabs-scroll::-webkit-scrollbar-thumb:hover {
-          background: linear-gradient(90deg, #34d399, #fbbf24);
-        }
-      `}</style>
+`}</style>
       {showNameModal && (
         <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 w-full max-w-md shadow-2xl text-center">
@@ -1071,18 +1048,74 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="max-w-4xl mx-auto mt-6 px-4">
-        <div className="mundiala-tabs-scroll bg-slate-900 border border-slate-800 p-1.5 rounded-2xl flex justify-between gap-1 overflow-x-auto shadow-xl pb-3">
-          <button onClick={() => setActiveTab('bets')} className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm transition duration-200 whitespace-nowrap min-w-[118px] sm:min-w-0 ${activeTab === 'bets' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>🏃 הימורים שלי</button>
-          <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm transition duration-200 whitespace-nowrap min-w-[118px] sm:min-w-0 ${activeTab === 'leaderboard' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>📊 טבלת משתתפים</button>
-          <button onClick={() => setActiveTab('myStats')} className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm transition duration-200 whitespace-nowrap min-w-[118px] sm:min-w-0 ${activeTab === 'myStats' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>🎯 הסטטיסטיקה שלי</button>
-          <button onClick={() => setActiveTab('exactLeaders')} className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm transition duration-200 whitespace-nowrap min-w-[118px] sm:min-w-0 ${activeTab === 'exactLeaders' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>🏅 בולים והישגים</button>
-          <button onClick={() => setActiveTab('longTerm')} className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm transition duration-200 whitespace-nowrap min-w-[118px] sm:min-w-0 ${activeTab === 'longTerm' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>🏆 מלך השערים ומנצחת</button>
+      
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur border-t border-slate-700 shadow-2xl">
+        <div className={`max-w-4xl mx-auto grid ${isAdmin ? 'grid-cols-6' : 'grid-cols-5'} h-16`}>
+
+          <button
+            onClick={() => setActiveTab('bets')}
+            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+              activeTab === 'bets' ? 'text-emerald-400' : 'text-slate-400'
+            }`}
+          >
+            <span className="text-lg leading-none mb-1">🏃</span>
+            הימורים
+          </button>
+
+          <button
+            onClick={() => setActiveTab('leaderboard')}
+            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+              activeTab === 'leaderboard' ? 'text-emerald-400' : 'text-slate-400'
+            }`}
+          >
+            <span className="text-lg leading-none mb-1">📊</span>
+            דירוג
+          </button>
+
+          <button
+            onClick={() => setActiveTab('myStats')}
+            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+              activeTab === 'myStats' ? 'text-emerald-400' : 'text-slate-400'
+            }`}
+          >
+            <span className="text-lg leading-none mb-1">🎯</span>
+            סטט׳
+          </button>
+
+          <button
+            onClick={() => setActiveTab('exactLeaders')}
+            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+              activeTab === 'exactLeaders' ? 'text-emerald-400' : 'text-slate-400'
+            }`}
+          >
+            <span className="text-lg leading-none mb-1">🏅</span>
+            בולים
+          </button>
+
+          <button
+            onClick={() => setActiveTab('longTerm')}
+            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+              activeTab === 'longTerm' ? 'text-emerald-400' : 'text-slate-400'
+            }`}
+          >
+            <span className="text-lg leading-none mb-1">🏆</span>
+            טורניר
+          </button>
+
           {isAdmin && (
-            <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm transition duration-200 whitespace-nowrap border ${activeTab === 'admin' ? 'bg-amber-600 text-white border-amber-400 shadow-md' : 'text-amber-400 border-amber-500/20 hover:bg-slate-800'}`}>👑 לוח בקרה אדמין</button>
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+                activeTab === 'admin' ? 'text-amber-400' : 'text-slate-400'
+              }`}
+            >
+              <span className="text-lg leading-none mb-1">👑</span>
+              אדמין
+            </button>
           )}
         </div>
       </nav>
+
 
       <main className="max-w-4xl mx-auto px-4 mt-8">
         
