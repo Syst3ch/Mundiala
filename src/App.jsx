@@ -507,7 +507,9 @@ export default function App() {
 
   const formatMatchDate = (isoString) => {
     const d = new Date(isoString);
-    return d.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' }) + " | " + d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const datePart = d.toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric' });
+    const timePart = d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    return `${datePart} · ${timePart}`;
   };
 
   const getFlagImg = (teamName) => {
@@ -1139,10 +1141,16 @@ export default function App() {
                   const matchScoring = getMatchScoring(match);
                   return (
                     <div key={match.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg hover:border-slate-700 transition">
-                      <div className="flex justify-between items-center text-xs text-slate-400 border-b border-slate-800 pb-2 mb-3">
-                        <span className="bg-emerald-950 text-green-400 font-bold px-2.5 py-0.5 rounded-full border border-green-500/20">{getMatchScoring(match).label || 'שלב הטורניר'}</span>
-                        <span>{formatMatchDate(match.match_time)}</span>
-                        <span className="bg-sky-400/10 text-sky-200 font-bold px-2.5 py-0.5 rounded-full border border-sky-300/20">
+                      <div className="grid grid-cols-[92px_1fr_132px] sm:grid-cols-[150px_1fr_180px] items-center gap-2 text-slate-400 border-b border-slate-800 pb-2 mb-3">
+                        <span className="justify-self-end inline-flex items-center justify-center text-center bg-emerald-950 text-green-400 font-black px-2 py-1 rounded-full border border-green-500/20 text-[11px] sm:text-xs leading-tight min-h-[34px] min-w-[72px] sm:min-w-[110px]">
+                          {getMatchScoring(match).label || 'שלב הטורניר'}
+                        </span>
+
+                        <span className="justify-self-center text-center text-[10px] sm:text-xs whitespace-nowrap leading-none">
+                          {formatMatchDate(match.match_time)}
+                        </span>
+
+                        <span className="justify-self-start inline-flex items-center justify-center whitespace-nowrap bg-sky-400/10 text-sky-200 font-bold px-2 py-1 rounded-full border border-sky-300/20 text-[10px] sm:text-xs leading-none">
                           {matchScoring.label}: בול {matchScoring.exact} | כיוון {matchScoring.direction}
                         </span>
                       </div>
