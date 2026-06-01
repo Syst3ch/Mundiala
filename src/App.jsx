@@ -402,20 +402,20 @@ export default function App() {
     }, 500);
   };
 
-  const toggleActualScorer = (playerName) => {
-    setActualTopScorers(prev => {
-      const updated = prev.includes(playerName)
-        ? prev.filter(name => name !== playerName)
-        : [...prev, playerName];
+const toggleActualScorer = (playerName) => {
+  setActualTopScorers(prev => {
+    const updated = prev.includes(playerName)
+      ? prev.filter(name => name !== playerName)
+      : [...prev, playerName];
 
-      setTimeout(async () => {
-        await calculatePoints();
-        await fetchLeaderboard();
-      }, 300);
+    setTimeout(async () => {
+      await calculatePoints();
+      await fetchLeaderboard();
+    }, 300);
 
-      return updated;
-    });
-  };
+    return updated;
+  });
+};
 
   // מנוע חישוב הנקודות האוטומטי (כולל משחקים, מלך השערים ואלופה!)
   const calculatePoints = async () => {
@@ -2061,7 +2061,16 @@ export default function App() {
                   איפוס אלופה
                 </button>
               </div>
-              <select value={actualChampion} onChange={(e) => setActualChampion(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-amber-500 font-medium">
+              <select
+  value={actualChampion}
+  onChange={async (e) => {
+    setActualChampion(e.target.value);
+
+    setTimeout(async () => {
+      await calculatePoints();
+      await fetchLeaderboard();
+    }, 300);
+  }} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-slate-100 focus:outline-none focus:border-amber-500 font-medium">
                  <option value="">-- בחר נבחרת שזכתה בטורניר --</option>
                  {topTeamsList.map(team => <option key={team} value={team}>{team}</option>)}
               </select>
