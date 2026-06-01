@@ -1882,7 +1882,7 @@ export default function App() {
             </div>
 
             <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 shadow-xl text-center">
-              <h3 className="text-lg font-bold text-amber-400 mb-2">🧮 חישוב נקודות אוטומטי לכל המשתתפים</h3>
+              <h3 className="text-lg font-bold text-amber-400 mb-2">✅ הניקוד מתעדכן אוטומטית</h3>
               <button onClick={calculatePoints} className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl transition text-sm shadow-md">חשב נקודות ועדכן את הלידרבורד</button>
             </div>
 
