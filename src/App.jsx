@@ -325,12 +325,11 @@ export default function App() {
       return;
     }
 
-    const { error } = await supabase.from('user_bets').upsert({
-      user_id: session.user.id,
-      match_id: matchId,
-      home_score: parseInt(bet.home),
-      away_score: parseInt(bet.away)
-    }, { onConflict: 'user_id,match_id' });
+const { error } = await supabase.rpc('save_user_bet_locked', {
+  p_match_id: matchId,
+  p_home_score: parseInt(bet.home),
+  p_away_score: parseInt(bet.away)
+});
 
     if (error) alert("שגיאה בשמירת ההימור: " + error.message);
     else {
