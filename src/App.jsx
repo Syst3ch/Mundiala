@@ -8,7 +8,7 @@ const ADMIN_EMAIL = 'or.shkefati@gmail.com';
 const DEFAULT_SCORING_SETTINGS = {
   exact: 5,
   direction: 2,
-  round32Exact: 6,
+  round32Exact: 6,  
   round32Direction: 3,
   round16Exact: 7,
   round16Direction: 3,
@@ -706,26 +706,51 @@ export default function App() {
     return `ניתן לשנות עד ${lockTime.toLocaleDateString('he-IL')} בשעה ${lockTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
-  const resetTopScorerBet = () => {
-    if (isTournamentBetLocked()) {
-      alert("הימורי הטורניר ננעלו. אי אפשר לאפס אחרי דקה לפני שריקת הפתיחה הראשונה.");
-      return;
-    }
+const resetTopScorerBet = async () => {
+  if (isTournamentBetLocked()) {
+    alert("הימורי הטורניר ננעלו.");
+    return;
+  }
 
-    setIsOtherScorer(false);
-    setLongTermBets(prev => ({ ...prev, topScorer: '' }));
-  };
+  const { error } = await supabase
+    .from('long_term_bets')
+    .upsert({
+      user_id: session.user.id,
+      top_scorer: '',
+      champion: longTermBets.champion || ''
+    }, { onConflict: 'user_id' });
 
-  const resetChampionBet = () => {
-    if (isTournamentBetLocked()) {
-      alert("הימורי הטורניר ננעלו. אי אפשר לאפס אחרי דקה לפני שריקת הפתיחה הראשונה.");
-      return;
-    }
+  if (error) {
+    alert(error.message);
+    return;
+  }
 
-    setIsOtherChampion(false);
-    setLongTermBets(prev => ({ ...prev, champion: '' }));
-  };
+  setIsOtherScorer(false);
+  setLongTermBets(prev => ({ ...prev, topScorer: '' }));
+};
 
+  const resetChampionBet = async () => {
+  if (isTournamentBetLocked()) {
+    alert("הימורי הטורניר ננעלו.");
+    return;
+  }
+
+  const { error } = await supabase
+    .from('long_term_bets')
+    .upsert({
+      user_id: session.user.id,
+      top_scorer: longTermBets.topScorer || '',
+      champion: ''
+    }, { onConflict: 'user_id' });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  setIsOtherChampion(false);
+  setLongTermBets(prev => ({ ...prev, champion: '' }));
+};
 
 
   const getUserMatchStats = (targetUserId = session?.user?.id) => {
