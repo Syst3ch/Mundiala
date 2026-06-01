@@ -8,7 +8,7 @@ const ADMIN_EMAIL = 'or.shkefati@gmail.com';
 const DEFAULT_SCORING_SETTINGS = {
   exact: 5,
   direction: 2,
-  round32Exact: 6,  
+  round32Exact: 6,
   round32Direction: 3,
   round16Exact: 7,
   round16Direction: 3,
@@ -52,6 +52,7 @@ export default function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [longTermBets, setLongTermBets] = useState({ topScorer: '', champion: '' });
+  const [allLongTermBets, setAllLongTermBets] = useState([]);
 
   // הגדרות אדמין לניקוד
   const [scoringSettings, setScoringSettings] = useState(() => {
@@ -100,6 +101,7 @@ export default function App() {
         fetchUserBets(session.user.id);
         fetchAllBets();
         fetchLongTermBets(session.user.id);
+        fetchAllLongTermBets();
         
         if (session.user.email !== ADMIN_EMAIL && activeTab === 'admin') {
           setActiveTab('home');
@@ -306,6 +308,23 @@ export default function App() {
     }
   }
 
+  async function fetchAllLongTermBets() {
+    const { data, error } = await supabase
+      .from('long_term_bets')
+      .select('*');
+
+    if (error) {
+      console.error('שגיאה בשליפת הימורי טורניר:', error);
+      return;
+    }
+
+    setAllLongTermBets(data || []);
+  }
+
+  const getUserLongTermBet = (userId) => {
+    return allLongTermBets.find(bet => bet.user_id === userId) || null;
+  };
+
   const handleBetChange = (matchId, team, value) => {
     if (value.includes('-')) return;
     if (value.length > 2) value = value.slice(0, 2);
@@ -353,7 +372,10 @@ export default function App() {
     }, { onConflict: 'user_id' });
 
     if (error) alert("שגיאה: " + error.message);
-    else alert("🔒 הימורי הטורניר שלך נשמרו לענן בהצלחה!");
+    else {
+      alert("🔒 הימורי הטורניר שלך נשמרו לענן בהצלחה!");
+      await fetchAllLongTermBets();
+    }
   };
 
   const handleAdminResultChange = async (matchId, homeScore, awayScore) => {
@@ -706,51 +728,28 @@ export default function App() {
     return `ניתן לשנות עד ${lockTime.toLocaleDateString('he-IL')} בשעה ${lockTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
-const resetTopScorerBet = async () => {
-  if (isTournamentBetLocked()) {
-    alert("הימורי הטורניר ננעלו.");
-    return;
-  }
+  const resetTopScorerBet = () => {
+    if (isTournamentBetLocked()) {
+      alert("הימורי הטורניר ננעלו. אי אפשר לאפס אחרי דקה לפני שריקת הפתיחה הראשונה.");
+      return;
+    }
 
-  const { error } = await supabase
-    .from('long_term_bets')
-    .upsert({
-      user_id: session.user.id,
-      top_scorer: '',
-      champion: longTermBets.champion || ''
-    }, { onConflict: 'user_id' });
+    setIsOtherScorer(false);
+    setLongTermBets(prev => ({ ...prev, topScorer: '' }));
+    await fetchAllLongTermBets();
+  };
 
-  if (error) {
-    alert(error.message);
-    return;
-  }
+  const resetChampionBet = () => {
+    if (isTournamentBetLocked()) {
+      alert("הימורי הטורניר ננעלו. אי אפשר לאפס אחרי דקה לפני שריקת הפתיחה הראשונה.");
+      return;
+    }
 
-  setIsOtherScorer(false);
-  setLongTermBets(prev => ({ ...prev, topScorer: '' }));
-};
+    setIsOtherChampion(false);
+    setLongTermBets(prev => ({ ...prev, champion: '' }));
+    await fetchAllLongTermBets();
+  };
 
-  const resetChampionBet = async () => {
-  if (isTournamentBetLocked()) {
-    alert("הימורי הטורניר ננעלו.");
-    return;
-  }
-
-  const { error } = await supabase
-    .from('long_term_bets')
-    .upsert({
-      user_id: session.user.id,
-      top_scorer: longTermBets.topScorer || '',
-      champion: ''
-    }, { onConflict: 'user_id' });
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  setIsOtherChampion(false);
-  setLongTermBets(prev => ({ ...prev, champion: '' }));
-};
 
 
   const getUserMatchStats = (targetUserId = session?.user?.id) => {
@@ -1583,17 +1582,28 @@ const resetTopScorerBet = async () => {
 </h2>
             <p className="text-xs text-slate-400 mb-4">
               במקרה של תיקו בנקודות: קודם יותר פגיעות בול, אחר כך יותר פגיעות כיוון.
+              {isTournamentBetLocked() && (
+                <span className="block mt-1 text-amber-300">
+                  הימורי נבחרת זוכה ומלך שערים מוצגים אחרי נעילת המשחק הראשון.
+                </span>
+              )}
             </p>
 
             {leaderboard.length === 0 ? (
               <p className="text-slate-400 text-center py-4">אין משתתפים כרגע או שהנתונים נטענים...</p>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-slate-800">
-                <table className="w-full text-right border-collapse min-w-[760px]">
+                <table className="w-full text-right border-collapse min-w-[980px]">
                   <thead>
                     <tr className="bg-slate-950 text-slate-400 text-xs font-bold border-b border-slate-800">
                       <th className="p-3">מיקום</th>
                       <th className="p-3">שם משתתף</th>
+                      {isTournamentBetLocked() && (
+                        <>
+                          <th className="p-3 text-center">נבחרת זוכה</th>
+                          <th className="p-3 text-center">מלך שערים</th>
+                        </>
+                      )}
                       <th className="p-3 text-center">בול</th>
                       <th className="p-3 text-center">כיוון</th>
                       <th className="p-3 text-center">לא תפס</th>
@@ -1607,6 +1617,24 @@ const resetTopScorerBet = async () => {
                       <tr key={user.id} onClick={() => setSelectedProfile(user)} className="hover:bg-slate-800/50 transition cursor-pointer">
                         <td className="p-3 font-black text-lg text-amber-300">{getLeaderboardMedal(index)}</td>
                         <td className="p-3 font-semibold">{user.display_name}</td>
+                        {isTournamentBetLocked() && (() => {
+                          const userLongTermBet = getUserLongTermBet(user.id);
+
+                          return (
+                            <>
+                              <td className="p-3 text-center">
+                                <span className="inline-flex items-center justify-center rounded-full bg-emerald-400/10 border border-emerald-300/20 text-emerald-100 px-3 py-1 text-xs font-bold whitespace-nowrap">
+                                  {userLongTermBet?.champion || 'לא בחר'}
+                                </span>
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className="inline-flex items-center justify-center rounded-full bg-amber-400/10 border border-amber-300/20 text-amber-100 px-3 py-1 text-xs font-bold whitespace-nowrap">
+                                  {userLongTermBet?.top_scorer || 'לא בחר'}
+                                </span>
+                              </td>
+                            </>
+                          );
+                        })()}
                         <td className="p-3 text-center font-bold text-emerald-300">{user.exact_count || 0}</td>
                         <td className="p-3 text-center font-bold text-orange-300">{user.direction_count || 0}</td>
                         <td className="p-3 text-center font-bold text-red-300">{user.missed_count || 0}</td>
