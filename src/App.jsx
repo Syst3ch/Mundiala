@@ -403,7 +403,18 @@ export default function App() {
   };
 
   const toggleActualScorer = (playerName) => {
-    setActualTopScorers(prev => prev.includes(playerName) ? prev.filter(name => name !== playerName) : [...prev, playerName]);
+    setActualTopScorers(prev => {
+      const updated = prev.includes(playerName)
+        ? prev.filter(name => name !== playerName)
+        : [...prev, playerName];
+
+      setTimeout(async () => {
+        await calculatePoints();
+        await fetchLeaderboard();
+      }, 300);
+
+      return updated;
+    });
   };
 
   // מנוע חישוב הנקודות האוטומטי (כולל משחקים, מלך השערים ואלופה!)
@@ -728,7 +739,7 @@ export default function App() {
     return `ניתן לשנות עד ${lockTime.toLocaleDateString('he-IL')} בשעה ${lockTime.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
-  const resetTopScorerBet = () => {
+  const resetTopScorerBet = async () => {
     if (isTournamentBetLocked()) {
       alert("הימורי הטורניר ננעלו. אי אפשר לאפס אחרי דקה לפני שריקת הפתיחה הראשונה.");
       return;
@@ -739,7 +750,7 @@ export default function App() {
     await fetchAllLongTermBets();
   };
 
-  const resetChampionBet = () => {
+  const resetChampionBet = async () => {
     if (isTournamentBetLocked()) {
       alert("הימורי הטורניר ננעלו. אי אפשר לאפס אחרי דקה לפני שריקת הפתיחה הראשונה.");
       return;
