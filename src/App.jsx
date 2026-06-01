@@ -43,13 +43,14 @@ export default function App() {
   const [displayName, setDisplayName] = useState('');
   const [editingUserId, setEditingUserId] = useState('');
   const [adminDisplayName, setAdminDisplayName] = useState('');
-  const [activeTab, setActiveTab] = useState('bets'); 
+  const [activeTab, setActiveTab] = useState('home'); 
   const [matches, setMatches] = useState([]);
   
   const [leaderboard, setLeaderboard] = useState([]);
   const [userBets, setUserBets] = useState({});
   const [allBets, setAllBets] = useState([]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState(null);
   const [longTermBets, setLongTermBets] = useState({ topScorer: '', champion: '' });
 
   // הגדרות אדמין לניקוד
@@ -101,7 +102,7 @@ export default function App() {
         fetchLongTermBets(session.user.id);
         
         if (session.user.email !== ADMIN_EMAIL && activeTab === 'admin') {
-          setActiveTab('bets');
+          setActiveTab('home');
         }
       };
       initData();
@@ -325,11 +326,12 @@ export default function App() {
       return;
     }
 
-const { error } = await supabase.rpc('save_user_bet_locked', {
-  p_match_id: matchId,
-  p_home_score: parseInt(bet.home),
-  p_away_score: parseInt(bet.away)
-});
+    const { error } = await supabase.from('user_bets').upsert({
+      user_id: session.user.id,
+      match_id: matchId,
+      home_score: parseInt(bet.home),
+      away_score: parseInt(bet.away)
+    }, { onConflict: 'user_id,match_id' });
 
     if (error) alert("שגיאה בשמירת ההימור: " + error.message);
     else {
@@ -935,6 +937,150 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
 
 
 
+
+  const getMyLeaderboardRank = () => {
+    const index = leaderboard.findIndex(user => user.id === session?.user?.id);
+    return index >= 0 ? index + 1 : null;
+  };
+
+  const getMyProfile = () => {
+    return leaderboard.find(user => user.id === session?.user?.id) || null;
+  };
+
+  const getNextOpenMatch = () => {
+    const now = new Date();
+
+    return matches
+      .filter(match => !match.is_finished)
+      .filter(match => {
+        const kickoff = new Date(match.match_time);
+        if (Number.isNaN(kickoff.getTime())) return false;
+        return kickoff > now;
+      })
+      .sort((a, b) => new Date(a.match_time) - new Date(b.match_time))[0] || null;
+  };
+
+  const getTimeUntilLock = (matchTime) => {
+    const kickoff = new Date(matchTime);
+    if (Number.isNaN(kickoff.getTime())) return "";
+
+    const lockTime = new Date(kickoff.getTime() - 60 * 1000);
+    const diffMs = lockTime.getTime() - Date.now();
+
+    if (diffMs <= 0) return "ההימור ננעל";
+
+    const totalMinutes = Math.ceil(diffMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours > 0) return `${hours} שעות ו-${minutes} דקות`;
+    return `${minutes} דקות`;
+  };
+
+  const getTeamFlagUrl = (teamName) => {
+    const code = flagMap[teamName];
+    return code ? `https://flagcdn.com/w80/${code}.png` : null;
+  };
+
+  const getScorerImageUrl = (playerName) => {
+    if (!playerName) return null;
+
+    const map = {
+      "קיליאן אמבפה": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/2019-07-17_SG_Dynamo_Dresden_vs._Paris_Saint-Germain_by_Sandro_Halank%E2%80%93129.jpg/240px-2019-07-17_SG_Dynamo_Dresden_vs._Paris_Saint-Germain_by_Sandro_Halank%E2%80%93129.jpg",
+      "הארי קיין": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/Harry_Kane_in_Russia_2.jpg/240px-Harry_Kane_in_Russia_2.jpg",
+      "ג'וד בלינגהאם": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/25th_Laureus_World_Sports_Awards_-_Red_Carpet_-_Jude_Bellingham_-_240422_190617_%28cropped%29.jpg/240px-25th_Laureus_World_Sports_Awards_-_Red_Carpet_-_Jude_Bellingham_-_240422_190617_%28cropped%29.jpg",
+      "ארלינג הולאנד": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/2019-07-30_Fu%C3%9Fball%2C_M%C3%A4nner%2C_UEFA_Champions_League%2C_FC_Red_Bull_Salzburg_-_HJK_Helsinki_1DX_0614_by_Stepro_%28cropped%29.jpg/240px-2019-07-30_Fu%C3%9Fball%2C_M%C3%A4nner%2C_UEFA_Champions_League%2C_FC_Red_Bull_Salzburg_-_HJK_Helsinki_1DX_0614_by_Stepro_%28cropped%29.jpg",
+      "כריסטיאנו רונאלדו": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/Cristiano_Ronaldo_2018.jpg/240px-Cristiano_Ronaldo_2018.jpg",
+      "ליונל מסי": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Lionel_Messi_20180626.jpg/240px-Lionel_Messi_20180626.jpg",
+      "ויניסיוס ג'וניור": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Vinicius_Jr_2021.jpg/240px-Vinicius_Jr_2021.jpg",
+      "רוברט לבנדובסקי": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/Robert_Lewandowski_2018.jpg/240px-Robert_Lewandowski_2018.jpg"
+    };
+
+    return map[playerName] || null;
+  };
+
+  const getMySameBetCount = (matchId) => {
+    const myBet = userBets[matchId];
+    if (!myBet || myBet.home === '' || myBet.away === '') return 0;
+
+    const myHome = Number(myBet.home);
+    const myAway = Number(myBet.away);
+
+    return allBets.filter(bet => {
+      if (bet.user_id === session?.user?.id) return false;
+      return Number(bet.home_score) === myHome && Number(bet.away_score) === myAway;
+    }).filter(bet => bet.match_id === matchId).length;
+  };
+
+  const getAveragePointsPerFinishedBet = (profile) => {
+    if (!profile) return 0;
+    const played = (profile.exact_count || 0) + (profile.direction_count || 0) + (profile.missed_count || 0);
+    if (!played) return 0;
+    return ((profile.points || 0) / played).toFixed(1);
+  };
+
+  const renderLongTermPickCard = (type) => {
+    const isChampion = type === 'champion';
+    const title = isChampion ? 'הנבחרת הזוכה שלי' : 'כובש השערים המצטיין שלי';
+    const value = isChampion ? longTermBets.champion : longTermBets.topScorer;
+    const image = isChampion ? getTeamFlagUrl(value) : getScorerImageUrl(value);
+    const actualValue = isChampion ? actualChampion : null;
+    const isActualScorerSet = !isChampion && actualTopScorers.length > 0;
+    const isCorrect = isChampion
+      ? Boolean(actualChampion && value && value === actualChampion)
+      : Boolean(value && actualTopScorers.includes(value));
+    const isWrong = isChampion
+      ? Boolean(actualChampion && value && value !== actualChampion)
+      : Boolean(isActualScorerSet && value && !actualTopScorers.includes(value));
+
+    return (
+      <button
+        onClick={() => setActiveTab('longTerm')}
+        className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-right hover:border-emerald-500/40 transition shadow-lg"
+      >
+        <div className="text-xs text-slate-400 font-bold mb-2">{isChampion ? '🏆' : '⚽'} {title}</div>
+
+        <div className="flex items-center gap-3">
+          {image ? (
+            <img src={image} alt="" className="w-12 h-12 rounded-full object-cover border border-slate-700 bg-slate-950" />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-slate-950 border border-slate-700 flex items-center justify-center text-xl">
+              {isChampion ? '🏳️' : '👤'}
+            </div>
+          )}
+
+          <div className="min-w-0">
+            <div className="font-black text-slate-100 truncate">
+              {value || 'עדיין לא נבחר'}
+            </div>
+            <div className={`text-xs font-bold mt-1 ${
+              isCorrect ? 'text-emerald-300' : isWrong ? 'text-red-300' : 'text-amber-300'
+            }`}>
+              {isCorrect ? '🥇 פגעת!' : isWrong ? '❌ לא פגעת' : '⏳ ממתין להכרעה'}
+            </div>
+          </div>
+        </div>
+      </button>
+    );
+  };
+
+  const renderPerformanceBar = (label, value, maxValue, colorClass) => {
+    const percent = maxValue ? Math.min(100, Math.round((value / maxValue) * 100)) : 0;
+
+    return (
+      <div className="space-y-1">
+        <div className="flex justify-between text-xs font-bold text-slate-400">
+          <span>{label}</span>
+          <span>{value}</span>
+        </div>
+        <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+          <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
+        </div>
+      </div>
+    );
+  };
+
+
   useEffect(() => {
     if (!notificationsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return;
 
@@ -1022,6 +1168,47 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
           </div>
         </div>
       )}
+      {selectedProfile && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-xl font-black text-white">כרטיס משתתף</h3>
+              <button onClick={() => setSelectedProfile(null)} className="text-slate-400 hover:text-white text-xl">×</button>
+            </div>
+
+            <div className="text-center mb-5">
+              <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-3xl mb-3">
+                👤
+              </div>
+              <div className="text-2xl font-black text-emerald-300">{selectedProfile.display_name || 'ללא שם'}</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-center">
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3">
+                <div className="text-2xl font-black text-emerald-300">{selectedProfile.points || 0}</div>
+                <div className="text-xs text-slate-400 font-bold">נקודות</div>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3">
+                <div className="text-2xl font-black text-green-300">{selectedProfile.exact_count || 0}</div>
+                <div className="text-xs text-slate-400 font-bold">בולים</div>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3">
+                <div className="text-2xl font-black text-orange-300">{selectedProfile.direction_count || 0}</div>
+                <div className="text-xs text-slate-400 font-bold">כיוון</div>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3">
+                <div className="text-2xl font-black text-sky-300">{selectedProfile.capture_percent || 0}%</div>
+                <div className="text-xs text-slate-400 font-bold">אחוז תפיסה</div>
+              </div>
+            </div>
+
+            <div className="mt-4 text-center text-xs text-slate-500">
+              ממוצע נקודות למשחק: <span className="font-black text-slate-300">{getAveragePointsPerFinishedBet(selectedProfile)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 border-b border-emerald-500/20 p-5 shadow-2xl">
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
@@ -1051,11 +1238,21 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
 
       
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur border-t border-slate-700 shadow-2xl">
-        <div className={`max-w-4xl mx-auto grid ${isAdmin ? 'grid-cols-6' : 'grid-cols-5'} h-16`}>
+        <div className={`max-w-4xl mx-auto grid ${isAdmin ? 'grid-cols-7' : 'grid-cols-6'} h-16`}>
+
+          <button
+            onClick={() => setActiveTab('home')}
+            className={`flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition ${
+              activeTab === 'home' ? 'text-emerald-400' : 'text-slate-400'
+            }`}
+          >
+            <span className="text-lg leading-none mb-1">🏠</span>
+            בית
+          </button>
 
           <button
             onClick={() => setActiveTab('bets')}
-            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+            className={`flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition ${
               activeTab === 'bets' ? 'text-emerald-400' : 'text-slate-400'
             }`}
           >
@@ -1065,7 +1262,7 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
 
           <button
             onClick={() => setActiveTab('leaderboard')}
-            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+            className={`flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition ${
               activeTab === 'leaderboard' ? 'text-emerald-400' : 'text-slate-400'
             }`}
           >
@@ -1075,7 +1272,7 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
 
           <button
             onClick={() => setActiveTab('myStats')}
-            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+            className={`flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition ${
               activeTab === 'myStats' ? 'text-emerald-400' : 'text-slate-400'
             }`}
           >
@@ -1085,7 +1282,7 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
 
           <button
             onClick={() => setActiveTab('exactLeaders')}
-            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+            className={`flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition ${
               activeTab === 'exactLeaders' ? 'text-emerald-400' : 'text-slate-400'
             }`}
           >
@@ -1095,7 +1292,7 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
 
           <button
             onClick={() => setActiveTab('longTerm')}
-            className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+            className={`flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition ${
               activeTab === 'longTerm' ? 'text-emerald-400' : 'text-slate-400'
             }`}
           >
@@ -1106,7 +1303,7 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
           {isAdmin && (
             <button
               onClick={() => setActiveTab('admin')}
-              className={`flex flex-col items-center justify-center text-[11px] sm:text-xs font-bold transition ${
+              className={`flex flex-col items-center justify-center text-[10px] sm:text-xs font-bold transition ${
                 activeTab === 'admin' ? 'text-amber-400' : 'text-slate-400'
               }`}
             >
@@ -1120,6 +1317,95 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
 
       <main className="max-w-4xl mx-auto px-4 mt-8">
         
+        {activeTab === 'home' && (() => {
+          const myProfile = getMyProfile();
+          const myStats = getUserMatchStats();
+          const myRank = getMyLeaderboardRank();
+          const nextMatch = getNextOpenMatch();
+          const played = myStats.finishedWithBet;
+          const maxStat = Math.max(myStats.exact, myStats.direction, myStats.missed, 1);
+
+          return (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {renderLongTermPickCard('champion')}
+                {renderLongTermPickCard('topScorer')}
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <h2 className="text-xl font-extrabold mb-4 text-emerald-400" style={{ fontFamily: 'Rubik, sans-serif' }}>
+                  📌 מצב אישי
+                </h2>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-center">
+                    <div className="text-2xl font-black text-amber-300">{myRank ? `#${myRank}` : '-'}</div>
+                    <div className="text-xs text-slate-400 mt-1 font-bold">דירוג</div>
+                  </div>
+                  <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-center">
+                    <div className="text-2xl font-black text-emerald-300">{myProfile?.points || myStats.points || 0}</div>
+                    <div className="text-xs text-slate-400 mt-1 font-bold">נקודות</div>
+                  </div>
+                  <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-center">
+                    <div className="text-2xl font-black text-green-300">{myStats.exact}</div>
+                    <div className="text-xs text-slate-400 mt-1 font-bold">בול</div>
+                  </div>
+                  <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-center">
+                    <div className="text-2xl font-black text-orange-300">{myStats.direction}</div>
+                    <div className="text-xs text-slate-400 mt-1 font-bold">כיוון</div>
+                  </div>
+                  <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 text-center col-span-2 sm:col-span-1">
+                    <div className="text-2xl font-black text-sky-300">{getAveragePointsPerFinishedBet(myProfile)}</div>
+                    <div className="text-xs text-slate-400 mt-1 font-bold">ממוצע נק׳ למשחק</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <h2 className="text-xl font-extrabold mb-4 text-emerald-400" style={{ fontFamily: 'Rubik, sans-serif' }}>
+                  🔥 המשחק הבא
+                </h2>
+
+                {nextMatch ? (
+                  <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-black text-slate-100">{nextMatch.home_team}</div>
+                      <div className="text-slate-500 font-black">נגד</div>
+                      <div className="font-black text-slate-100">{nextMatch.away_team}</div>
+                    </div>
+                    <div className="text-center text-xs text-slate-400 mt-3">{formatMatchDate(nextMatch.match_time)}</div>
+                    <div className="text-center text-sm font-black text-amber-300 mt-2">
+                      ההימור נסגר בעוד {getTimeUntilLock(nextMatch.match_time)}
+                    </div>
+                    <button onClick={() => setActiveTab('bets')} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition">
+                      עבור להימור
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center text-slate-400 py-5">אין כרגע משחק פתוח קרוב.</div>
+                )}
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <h2 className="text-xl font-extrabold mb-4 text-emerald-400" style={{ fontFamily: 'Rubik, sans-serif' }}>
+                  📈 גרף ביצועים
+                </h2>
+
+                <div className="space-y-4">
+                  {renderPerformanceBar('תפיסות בול', myStats.exact, maxStat, 'bg-emerald-400')}
+                  {renderPerformanceBar('תפיסות כיוון', myStats.direction, maxStat, 'bg-orange-400')}
+                  {renderPerformanceBar('לא נתפס', myStats.missed, maxStat, 'bg-red-400')}
+                  {renderPerformanceBar('אחוז תפיסה', myStats.capturePercent, 100, 'bg-sky-400')}
+                </div>
+
+                <div className="text-xs text-slate-500 mt-4 text-center">
+                  מחושב לפי {played} משחקים שהסתיימו ויש בהם הימור שמור.
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {activeTab === 'bets' && (
           <div>
             <h2
@@ -1204,6 +1490,19 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
                         );
                       })()}
 
+                      {(() => {
+                        const sameBetCount = getMySameBetCount(match.id);
+                        const myBet = userBets[match.id];
+
+                        if (!myBet || myBet.home === '' || myBet.away === '') return null;
+
+                        return (
+                          <div className="mb-4 rounded-2xl border border-purple-300/20 bg-purple-400/10 px-4 py-3 text-center text-xs font-bold text-purple-100">
+                            👥 עוד {sameBetCount} משתתפים הימרו כמוך על {myBet.home}-{myBet.away}
+                          </div>
+                        );
+                      })()}
+
                       <div className="grid grid-cols-12 items-center gap-2">
                         <div className="col-span-4 flex items-center justify-end gap-2 font-bold text-sm sm:text-base">
                           <span>{match.home_team}</span>
@@ -1274,12 +1573,13 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
                       <th className="p-3 text-center">כיוון</th>
                       <th className="p-3 text-center">לא תפס</th>
                       <th className="p-3 text-center">אחוז תפיסה</th>
+                      <th className="p-3 text-center">ממוצע</th>
                       <th className="p-3 text-left">סה"כ נקודות</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 text-sm">
                     {leaderboard.map((user, index) => (
-                      <tr key={user.id} className="hover:bg-slate-800/50 transition">
+                      <tr key={user.id} onClick={() => setSelectedProfile(user)} className="hover:bg-slate-800/50 transition cursor-pointer">
                         <td className="p-3 font-black text-lg text-amber-300">{getLeaderboardMedal(index)}</td>
                         <td className="p-3 font-semibold">{user.display_name}</td>
                         <td className="p-3 text-center font-bold text-emerald-300">{user.exact_count || 0}</td>
@@ -1290,6 +1590,7 @@ const { error } = await supabase.rpc('save_user_bet_locked', {
                             {user.capture_percent || 0}%
                           </span>
                         </td>
+                        <td className="p-3 text-center font-bold text-sky-300">{getAveragePointsPerFinishedBet(user)}</td>
                         <td className="p-3 font-black text-left text-emerald-400">{user.points || 0} נק'</td>
                       </tr>
                     ))}
