@@ -22,7 +22,7 @@ const TEAM_TRANSLATIONS = {
 
 const translateTeam = (name) => TEAM_TRANSLATIONS[name] || name;
 
-// 2. מנגנון Seed שמייצר פרופיל סגנון משחק ריאליסטי
+// 2. מנגנון Seed שמייצר פרופיל סגנון משחק ריאליסטי לכל נבחרת
 const generateDynamicStats = (teamName) => {
   if (!teamName) return { form: ["D", "D", "D", "D", "D"], h2h: { homeWins: 1, draws: 3, awayWins: 1 }, attack: 1.2, defense: 1.1 };
   const code = teamName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -56,21 +56,20 @@ export default function App() {
   useEffect(() => {
     const fetchRealOdds = async () => {
       try {
-        // --- בדיקת מנגנון LOCAL STORAGE CACHE ---
+        // --- בדיקת מנגנון LOCAL STORAGE CACHE לטעינה מהירה במובייל ---
         const cachedData = localStorage.getItem('world_cup_matches_cache');
         const cachedTime = localStorage.getItem('world_cup_cache_time');
-        const FOUR_HOURS = 4 * 60 * 60 * 1000; // זמן ה-Cache במילישניות
+        const FOUR_HOURS = 4 * 60 * 60 * 1000;
 
         if (cachedData && cachedTime && (Date.now() - cachedTime < FOUR_HOURS)) {
           const parsedMatches = JSON.parse(cachedData);
           setMatches(parsedMatches);
           setSelectedMatch(parsedMatches[0]);
           setLoading(false);
-          console.log("⚡ הנתונים נטענו מיידית מה-Cache המקומי במכשיר!");
-          return; // עוצר כאן, חסך פנייה לרשת וזמן טעינה במובייל!
+          console.log("⚡ הנתונים נטענו מיידית מה-Cache המקומי!");
+          return;
         }
 
-        // אם אין Cache או שהוא פג תוקף - פונים ל-API
         const apiKey = import.meta.env.VITE_ODDS_API_KEY;
         if (!apiKey) {
           console.error("Missing API Key");
@@ -116,7 +115,7 @@ export default function App() {
             };
           });
 
-          // שמירה בתוך ה-Cache המקומי לפעמים הבאות
+          // שמירה ב-Cache לפעמים הבאות
           localStorage.setItem('world_cup_matches_cache', JSON.stringify(formattedMatches));
           localStorage.setItem('world_cup_cache_time', Date.now().toString());
 
@@ -133,7 +132,7 @@ export default function App() {
     fetchRealOdds();
   }, []);
 
-  // אלגוריתם שקלול מתקדם
+  // אלגוריתם שקלול וחיזוי תוצאה
   const calculatePrediction = (match) => {
     if (!match) return null;
 
@@ -266,7 +265,7 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* טור: רשימת המשחקים */}
+        {/* טור: לוח רשימת המשחקים */}
         <div className="lg:col-span-1 space-y-4 max-h-[60vh] lg:max-h-[75vh] overflow-y-auto pr-1 scrollbar-thin order-2 lg:order-none">
           <h2 className="text-lg font-bold text-slate-300 mb-2">לוח המשחקים ({matches.length})</h2>
           {matches.map(match => {
@@ -312,34 +311,36 @@ export default function App() {
             
             <div className="flex justify-around items-center my-6 gap-1">
               <div className="text-center w-1/3">
-                <div className="text-lg md:text-2xl font-black truncate">{selectedMatch.homeTeam}</div>
-                <div className="text-xl md:text-2xl font-bold text-emerald-400 mt-1">{currentPrediction.homePercent}%</div>
+                <div className="text-base md:text-2xl font-black truncate">{selectedMatch.homeTeam}</div>
+                <div className="text-lg md:text-2xl font-bold text-emerald-400 mt-1">{currentPrediction.homePercent}%</div>
                 <div className="text-[9px] md:text-[10px] text-slate-500 mt-0.5">התקפה: {selectedMatch.homeAttack.toFixed(1)}</div>
               </div>
               
-              <div className="text-center bg-slate-950/70 border border-slate-800 px-3 py-3 rounded-2xl w-1/3 shadow-inner">
+              {/* קוביית התוצאה המוקטנת והמוגנת מפני שבירת שורות */}
+              <div className="text-center bg-slate-950/70 border border-slate-800 px-2 py-3 rounded-2xl w-1/3 shadow-inner min-w-[90px]">
                 <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">תוצאה משוערת</div>
-                <div className="text-2xl md:text-4xl font-mono font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 my-1">
+                <div className="text-xl md:text-3xl font-mono font-black tracking-normal text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 my-1 whitespace-nowrap">
                   {currentPrediction.predictedScore}
                 </div>
                 <div className="text-[9px] text-slate-400 border-t border-slate-800/60 pt-1 mt-1">תיקו: {currentPrediction.drawPercent}%</div>
               </div>
               
               <div className="text-center w-1/3">
-                <div className="text-lg md:text-2xl font-black truncate">{selectedMatch.awayTeam}</div>
-                <div className="text-xl md:text-2xl font-bold text-cyan-400 mt-1">{currentPrediction.awayPercent}%</div>
+                <div className="text-base md:text-2xl font-black truncate">{selectedMatch.awayTeam}</div>
+                <div className="text-lg md:text-2xl font-bold text-cyan-400 mt-1">{currentPrediction.awayPercent}%</div>
                 <div className="text-[9px] md:text-[10px] text-slate-500 mt-0.5">התקפה: {selectedMatch.awayAttack.toFixed(1)}</div>
               </div>
             </div>
 
             <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 md:p-4 flex justify-between items-center text-xs md:text-sm">
               <span className="text-slate-400">המלצת ווינר חכמה:</span>
-              <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-300 text-sm md:text-lg">
+              <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-300 text-xs md:text-lg">
                 {currentPrediction.recommendation}
               </span>
             </div>
           </div>
 
+          {/* קוביות נתונים ויחסים */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
               <h4 className="text-sm font-bold text-slate-400 mb-3">כושר בטורניר ויחסי כוחות</h4>
@@ -412,6 +413,7 @@ export default function App() {
             </div>
           </div>
 
+          {/* כפתורי הזרקת פצועים מהירה מהנייד */}
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
             <h4 className="text-sm font-bold text-slate-300 mb-1">עדכון פצועים מהיר מהסמארטפון</h4>
             <p className="text-xs text-slate-400 mb-3">הזרק פצועים שגילית במחנות הנבחרות כדי לעדכן מיידית את יחסי הכוחות:</p>
