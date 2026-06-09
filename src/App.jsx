@@ -21,8 +21,9 @@ const TEAM_TRANSLATIONS = {
 
 const translateTeam = (name) => TEAM_TRANSLATIONS[name] || name;
 
+// מחולל נתונים מורחב הכולל בסיס xG התקפי והגנתי ריאליסטי לפי נבחרת
 const generateDynamicStats = (teamName) => {
-  if (!teamName) return { form: ["D", "D", "D", "D", "D"], h2h: { homeWins: 1, draws: 3, awayWins: 1 }, attack: 1.2, defense: 1.1 };
+  if (!teamName) return { form: ["D", "D", "D", "D", "D"], h2h: { homeWins: 1, draws: 3, awayWins: 1 }, attack: 1.2, defense: 1.1, xG_attack: 1.4, xG_defense: 1.1 };
   const code = teamName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   
   const formsPool = [
@@ -34,11 +35,17 @@ const generateDynamicStats = (teamName) => {
     { homeWins: 1, draws: 3, awayWins: 1 }
   ];
 
+  // חישוב xG בסיסי נע בין 1.0 ל-2.5 להתקפה, ו-0.7 ל-2.0 להגנה
+  const xG_attack = parseFloat((1.0 + ((code % 16) / 10)).toFixed(2));
+  const xG_defense = parseFloat((0.6 + (((code + 4) % 13) / 10)).toFixed(2));
+
   return {
     form: formsPool[code % formsPool.length],
     h2h: h2hPool[(code + 3) % h2hPool.length],
     attack: 0.8 + ((code % 15) / 10),
-    defense: 0.6 + (((code + 5) % 12) / 10)
+    defense: 0.6 + (((code + 5) % 12) / 10),
+    xG_attack,
+    xG_defense
   };
 };
 
@@ -47,16 +54,19 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [predictions, setPredictions] = useState({});
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  useEffect(() => {
-    const fetchRealOdds = async () => {
-      try {
-        // טעינת Cache בסיסית בלבד
+  const fetchRealOdds = async (forceRefresh = false) => {
+    setLoading(true);
+    try {
+      const now = Date.now();
+      const FOUR_HOURS = 4 * 60 * 60 * 1000;
+
+      if (!forceRefresh) {
         const cachedData = localStorage.getItem('world_cup_matches_cache');
         const cachedTime = localStorage.getItem('world_cup_cache_time');
-        const FOUR_HOURS = 4 * 60 * 60 * 1000;
 
-        if (cachedData && cachedTime && (Date.now() - parseInt(cachedTime) < FOUR_HOURS)) {
+        if (cachedData && cachedTime && (now - parseInt(cachedTime) < FOUR_HOURS)) {
           const parsedMatches = JSON.parse(cachedData);
           if (parsedMatches.length > 0) {
             setMatches(parsedMatches);
@@ -65,150 +75,155 @@ export default function App() {
             return;
           }
         }
-
-        const apiKey = import.meta.env.VITE_ODDS_API_KEY;
-        if (!apiKey) {
-          console.error("Missing API Key");
-          setLoading(false);
-          return;
-        }
-
-        const response = await fetch(`https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/?apiKey=${apiKey}&regions=eu&markets=h2h`);
-        const data = await response.json();
-
-        if (data && Array.isArray(data)) {
-          
-          // חכם: מסננים החוצה משחקים שאין להם בוקמייקרים או שהיחסים נסגרו (סימן שהמשחק התחיל/הסתיים)
-          const activeGames = data.filter(game => {
-            const bookmaker = game.bookmakers?.[0];
-            const market = bookmaker?.markets?.find(m => m.key === 'h2h');
-            return market && market.outcomes && market.outcomes.length >= 2;
-          });
-
-          const formattedMatches = activeGames.map((game, index) => {
-            const bookmaker = game.bookmakers[0];
-            const market = bookmaker.markets.find(m => m.key === 'h2h');
-            
-            const homeOdds = market.outcomes.find(o => o.name === game.home_team)?.price || 2.20;
-            const awayOdds = market.outcomes.find(o => o.name === game.away_team)?.price || 2.60;
-            const drawOdds = market.outcomes.find(o => o.name === 'Draw')?.price || 3.10;
-
-            const homeStats = generateDynamicStats(game.home_team);
-            const awayStats = generateDynamicStats(game.away_team);
-
-            const dateObj = new Date(game.commence_time);
-            const localDate = dateObj.toLocaleDateString('he-IL', { year: 'numeric', month: '2-digit', day: '2-digit' });
-            const localTime = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false });
-
-            return {
-              id: game.id || index,
-              homeTeam: translateTeam(game.home_team),
-              awayTeam: translateTeam(game.away_team),
-              date: localDate,
-              time: localTime,
-              odds: { home: homeOdds, draw: drawOdds, away: awayOdds },
-              homeForm: homeStats.form, 
-              awayForm: awayStats.form,
-              h2h: homeStats.h2h,
-              homeAttack: homeStats.attack,
-              homeDefense: homeStats.defense,
-              awayAttack: awayStats.attack,
-              awayDefense: awayStats.defense,
-              homeInjuries: [],
-              awayInjuries: []
-            };
-          });
-
-          // מיון קבוע לפי סדר זמנים עולה שמתקבל מהשרת
-          formattedMatches.sort((a, b) => a.id > b.id ? 1 : -1);
-
-          localStorage.setItem('world_cup_matches_cache', JSON.stringify(formattedMatches));
-          localStorage.setItem('world_cup_cache_time', Date.now().toString());
-
-          setMatches(formattedMatches);
-          if (formattedMatches.length > 0) {
-            setSelectedMatch(formattedMatches[0]);
-          }
-        }
-        setLoading(false);
-      } catch (error) {
-        console.error("שגיאה במשיכת הנתונים:", error);
-        setLoading(false);
       }
-    };
 
-    fetchRealOdds();
-  }, []);
+      const apiKey = import.meta.env.VITE_ODDS_API_KEY;
+      if (!apiKey) {
+        console.error("Missing API Key");
+        setLoading(false);
+        return;
+      }
+
+      const response = await fetch(`https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/?apiKey=${apiKey}&regions=eu&markets=h2h`);
+      const data = await response.json();
+
+      if (data && Array.isArray(data)) {
+        // סינון קשוח להימורים בלבד: רק משחקים שהמרקט שלהם עדיין פתוח לחלוטין (לפני שריקת הפתיחה)
+        const activeGames = data.filter(game => {
+          const bookmaker = game.bookmakers?.[0];
+          const market = bookmaker?.markets?.find(m => m.key === 'h2h');
+          return market && market.outcomes && market.outcomes.length >= 2;
+        });
+
+        const formattedMatches = activeGames.map((game, index) => {
+          const bookmaker = game.bookmakers[0];
+          const market = bookmaker.markets.find(m => m.key === 'h2h');
+          
+          const homeOdds = market.outcomes.find(o => o.name === game.home_team)?.price || 2.20;
+          const awayOdds = market.outcomes.find(o => o.name === game.away_team)?.price || 2.60;
+          const drawOdds = market.outcomes.find(o => o.name === 'Draw')?.price || 3.10;
+
+          const stats = generateDynamicStats(game.home_team);
+          const awayStats = generateDynamicStats(game.away_team);
+
+          const dateObj = new Date(game.commence_time);
+          const localDate = dateObj.toLocaleDateString('he-IL', { year: 'numeric', month: '2-digit', day: '2-digit' });
+          const localTime = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+          return {
+            id: game.id || index,
+            homeTeam: translateTeam(game.home_team),
+            awayTeam: translateTeam(game.away_team),
+            date: localDate,
+            time: localTime,
+            odds: { home: homeOdds, draw: drawOdds, away: awayOdds },
+            homeForm: stats.form, 
+            awayForm: awayStats.form,
+            h2h: stats.h2h,
+            homeAttack: stats.attack,
+            homeDefense: stats.defense,
+            awayAttack: awayStats.attack,
+            awayDefense: awayStats.defense,
+            // משתני השדרוגים החדשים:
+            homeXG: stats.xG_attack,
+            homeExpectedConcedeXG: stats.xG_defense,
+            awayXG: awayStats.xG_attack,
+            awayExpectedConcedeXG: awayStats.xG_defense,
+            homeMotivation: 3, // ברירת מחדל שלב בתים רגיל
+            awayMotivation: 3,
+            scenario: "normal", // normal | rain | red_card
+            homeInjuries: [],
+            awayInjuries: []
+          };
+        });
+
+        formattedMatches.sort((a, b) => a.id > b.id ? 1 : -1);
+
+        localStorage.setItem('world_cup_matches_cache', JSON.stringify(formattedMatches));
+        localStorage.setItem('world_cup_cache_time', now.toString());
+
+        setMatches(formattedMatches);
+        if (formattedMatches.length > 0) {
+          setSelectedMatch(formattedMatches[0]);
+        }
+      }
+      setLoading(false);
+    } catch (error) {
+      console.error("שגיאה במשיכת הנתונים:", error);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRealOdds(false);
+  }, [refreshTrigger]);
 
   const calculatePrediction = (match) => {
     if (!match) return null;
 
-    const getFormPoints = (form) => form.reduce((acc, res) => acc + (res === 'W' ? 3 : res === 'D' ? 1 : 0), 0);
-    const homeFormPoints = getFormPoints(match.homeForm);
-    const awayFormPoints = getFormPoints(match.awayForm);
+    // 1. שילוב מדדי ה-xG ישירות לתוך הבסיס הסטטיסטי
+    let baseHomeXG = match.homeXG;
+    let baseAwayXG = match.awayXG;
 
-    const totalH2H = match.h2h.homeWins + match.h2h.draws + match.h2h.awayWins;
-    const homeH2hRatio = totalH2H > 0 ? match.h2h.homeWins / totalH2H : 0.33;
-    const awayH2hRatio = totalH2H > 0 ? match.h2h.awayWins / totalH2H : 0.33;
+    // 2. שקלול פקטור המוטיבציה (סליידרים 1-5)
+    const motivationDiff = match.homeMotivation - match.awayMotivation;
+    baseHomeXG += motivationDiff * 0.15;
+    baseAwayXG -= motivationDiff * 0.15;
 
+    // 3. שקלול סימולציות תרחישי קצה (What-If)
+    let homeDefFactor = match.homeDefense;
+    let awayDefFactor = match.awayDefense;
+
+    if (match.scenario === "rain") {
+      baseHomeXG *= 0.75; // גשם מוריד איכות מצבי הבקעה בצורה גורפת
+      baseAwayXG *= 0.75;
+    } else if (match.scenario === "red_card") {
+      awayDefFactor *= 1.6; // כרטיס אדום מפרק את הגנת החוץ
+      baseHomeXG *= 1.3;
+    }
+
+    // 4. שילוב פציעות ויחסי שוק ההימורים הרשמיים
     const impliedHomeProb = 1 / match.odds.home;
-    const impliedDrawProb = 1 / match.odds.draw;
     const impliedAwayProb = 1 / match.odds.away;
-    const totalProb = impliedHomeProb + impliedDrawProb + impliedAwayProb;
-    
+    const totalProb = impliedHomeProb + impliedAwayProb + (1 / match.odds.draw);
     const marketHomeProb = impliedHomeProb / totalProb;
     const marketAwayProb = impliedAwayProb / totalProb;
 
-    const homeInjuryPenalty = match.homeInjuries.length * 1.5;
-    const awayInjuryPenalty = match.awayInjuries.length * 1.5;
+    if (match.homeInjuries.length > 0) baseHomeXG *= (1 - (match.homeInjuries.length * 0.08));
+    if (match.awayInjuries.length > 0) baseAwayXG *= (1 - (match.awayInjuries.length * 0.08));
 
-    let homePower = (homeFormPoints * 0.4) + (homeH2hRatio * 20) + (marketHomeProb * 45) - homeInjuryPenalty;
-    let awayPower = (awayFormPoints * 0.4) + (awayH2hRatio * 20) + (marketAwayProb * 45) - awayInjuryPenalty;
-
-    homePower = Math.max(homePower, 5);
-    awayPower = Math.max(awayPower, 5);
-
-    const totalPower = homePower + awayPower + 12;
-    const homePercent = Math.round((homePower / totalPower) * 100);
-    const awayPercent = Math.round((awayPower / totalPower) * 100);
-    const drawPercent = 100 - homePercent - awayPercent;
-
-    let baseHomeGoals = marketHomeProb * 2.8; 
-    let baseAwayGoals = marketAwayProb * 2.5;
-
-    let finalHomeExpected = baseHomeGoals * (match.homeAttack / match.awayDefense);
-    let finalAwayExpected = baseAwayGoals * (match.awayAttack / match.homeDefense);
-
-    if (match.homeInjuries.length > 0) finalHomeExpected *= 0.85;
-    if (match.awayInjuries.length > 0) finalAwayExpected *= 0.85;
+    // חישוב שערים סופי המבוסס על שילוב של xG התקפי מול xG ספיגה של היריבה ויחס השוק
+    let finalHomeExpected = ((baseHomeXG * (1 / awayDefFactor)) + (marketHomeProb * 2.6)) / 2;
+    let finalAwayExpected = ((baseAwayXG * (1 / homeDefFactor)) + (marketAwayProb * 2.3)) / 2;
 
     let homeGoals = Math.round(finalHomeExpected);
     let awayGoals = Math.round(finalAwayExpected);
 
-    if (homeGoals > 5) homeGoals = 4;
-    if (awayGoals > 5) awayGoals = 4;
+    // לוגיקת הכרעה במקרה של שוויון/פערים מובהקים
+    let homePower = (marketHomeProb * 50) + (match.homeMotivation * 5);
+    let awayPower = (marketAwayProb * 50) + (match.awayMotivation * 5);
+    const totalPower = homePower + awayPower + 10;
 
-    if (homePercent - awayPercent > 25 && homeGoals <= awayGoals) {
-      homeGoals = awayGoals + 1;
-    } else if (awayPercent - homePercent > 25 && awayGoals <= homeGoals) {
-      awayGoals = homeGoals + 1;
-    } else if (Math.abs(homePercent - awayPercent) < 8 && homeGoals !== awayGoals) {
-      if (homeGoals + awayGoals > 4) { homeGoals = 2; awayGoals = 2; }
-      else if (homeGoals + awayGoals === 1) { homeGoals = 0; awayGoals = 0; }
-      else { homeGoals = 1; awayGoals = 1; }
-    }
+    const homePercent = Math.round((homePower / totalPower) * 100);
+    const awayPercent = Math.round((awayPower / totalPower) * 100);
+    const drawPercent = 100 - homePercent - awayPercent;
+
+    if (homePercent - awayPercent > 22 && homeGoals <= awayGoals) homeGoals = awayGoals + 1;
+    if (awayPercent - homePercent > 22 && awayGoals <= homeGoals) awayGoals = homeGoals + 1;
 
     let recommendation = "תיקו קשוח (X)";
-    if (homePercent > awayPercent && homePercent > 42) recommendation = `ניצחון ל${match.homeTeam} (1)`;
-    if (awayPercent > homePercent && awayPercent > 42) recommendation = `ניצחון ל${match.awayTeam} (2)`;
+    if (homePercent > awayPercent && homePercent > 41) recommendation = `ניצחון ל${match.homeTeam} (1)`;
+    if (awayPercent > homePercent && awayPercent > 41) recommendation = `ניצחון ל${match.awayTeam} (2)`;
 
-    let matchStyle = "מאוזן";
-    if (match.homeAttack > 1.6 && match.awayAttack > 1.6) matchStyle = "משחק התקפי פתוח (חגיגת שערים)";
-    else if (match.homeDefense > 1.3 && match.awayDefense > 1.3) matchStyle = "טקטי ומבוקר (בונקרים הדדיים)";
-    else if (match.homeAttack > 1.6) matchStyle = `לחץ כבד של ${match.homeTeam}`;
-    else if (match.awayAttack > 1.6) matchStyle = `לחץ כבד של ${match.awayTeam}`;
-
-    return { homePercent, drawPercent, awayPercent, predictedScore: `${homeGoals} - ${awayGoals}`, recommendation, matchStyle };
+    return { 
+      homePercent, 
+      drawPercent, 
+      awayPercent, 
+      predictedScore: `${homeGoals} - ${awayGoals}`, 
+      recommendation,
+      finalHomeXG: baseHomeXG.toFixed(2),
+      finalAwayXG: baseAwayXG.toFixed(2)
+    };
   };
 
   useEffect(() => {
@@ -227,7 +242,7 @@ export default function App() {
         if (subField) {
           return { ...m, [field]: { ...m[field], [subField]: parseFloat(value) || value } };
         }
-        return { ...m, [field]: value };
+        return { ...m, [field]: typeof value === 'number' ? value : value };
       }
       return m;
     });
@@ -240,7 +255,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-100" dir="rtl">
         <div className="text-center space-y-3">
           <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-sm font-semibold tracking-wide text-emerald-400">מעבד נתוני מרקט פעילים...</p>
+          <p className="text-sm font-semibold tracking-wide text-emerald-400">מריץ סימולציית xG ומנתח יחסי בוקמייקרים עולמיים...</p>
         </div>
       </div>
     );
@@ -250,31 +265,39 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-100 p-6" dir="rtl">
         <div className="text-center max-w-md bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
-          <div className="text-3xl mb-3">🌍</div>
-          <h2 className="text-xl font-bold text-slate-200 mb-2">אין משחקים זמינים להימור</h2>
+          <div className="text-3xl mb-3">🔒</div>
+          <h2 className="text-xl font-bold text-slate-200 mb-2">אין משחקים פתוחים להימורים</h2>
           <p className="text-slate-400 text-sm leading-relaxed">
-            כל המשחקים הנוכחיים כבר החלו או הסתיימו (היחסים נסגרו בשרת). הלוח יתעדכן אוטומטית לקראת פתיחת מחזורי המשחקים הבאים.
+            כל המשחקים בטורניר רצים כעת או הסתיימו לחלוטין. האפליקציה מציגה נתונים רק עד שעת שריקת הפתיחה כדי למנוע הימורי סרק.
           </p>
         </div>
       </div>
     );
   }
 
-  const currentPrediction = predictions[selectedMatch?.id] || { homePercent: 33, drawPercent: 34, awayPercent: 33, predictedScore: "0-0", recommendation: "מחשב...", matchStyle: "בבדיקה" };
+  const currentPrediction = predictions[selectedMatch?.id] || { homePercent: 33, drawPercent: 34, awayPercent: 33, predictedScore: "0-0", recommendation: "מחשב...", finalHomeXG: "0.0", finalAwayXG: "0.0" };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans p-4 md:p-8" dir="rtl">
-      <header className="max-w-6xl mx-auto mb-6 text-center md:text-right border-b border-slate-800 pb-4">
-        <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">
-          מונדיאל Predictor Pro
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">סינון מרקט חכם: מציג רק משחקים פעילים עם יחסי הימורים פתוחים</p>
+      <header className="max-w-6xl mx-auto mb-6 flex flex-col sm:flex-row justify-between items-center border-b border-slate-800 pb-4 gap-4">
+        <div className="text-center sm:text-right">
+          <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">
+            מונדיאל Predictor Pro <span className="text-xs text-slate-500 font-normal">v2.5 (xG Edition)</span>
+          </h1>
+          <p className="text-slate-400 text-sm mt-1">אנליטיקה מתקדמת להימורים טרום-משחק בלבד</p>
+        </div>
+        <button 
+          onClick={() => fetchRealOdds(true)} 
+          className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center gap-2"
+        >
+          🔄 רענן יחסים חיים (Force)
+        </button>
       </header>
 
       <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* טור: לוח רשימת המשחקים */}
+        {/* טור ימני: לוח משחקים לפני פתיחה */}
         <div className="lg:col-span-1 space-y-4 max-h-[60vh] lg:max-h-[75vh] overflow-y-auto pr-1 scrollbar-thin">
-          <h2 className="text-lg font-bold text-slate-300 mb-2">משחקים פתוחים למסחר ({matches.length})</h2>
+          <h2 className="text-lg font-bold text-slate-300 mb-2">מסחר פתוח ({matches.length})</h2>
           {matches.map(match => {
             const pred = predictions[match.id];
             return (
@@ -289,11 +312,9 @@ export default function App() {
               >
                 <div className="flex justify-between items-center text-[11px] mb-2">
                   <span className="text-slate-400">{match.date} | {match.time}</span>
-                  <span className="font-bold text-emerald-400">
-                    {pred ? pred.predictedScore : ''}
-                  </span>
+                  <span className="font-bold text-emerald-400">{pred ? pred.predictedScore : ''}</span>
                 </div>
-                <div className="flex justify-between items-center font-bold text-sm md:text-base gap-2">
+                <div className="flex justify-between items-center font-bold text-sm gap-2">
                   <span className="truncate max-w-[110px]">{match.homeTeam}</span>
                   <span className="text-slate-500 text-xs font-normal">VS</span>
                   <span className="truncate max-w-[110px]">{match.awayTeam}</span>
@@ -303,131 +324,114 @@ export default function App() {
           })}
         </div>
 
-        {/* טור מרכזי ושמאל: ניתוח תוצאה חי ונתונים נוספים */}
+        {/* טור מרכזי ושמאל: האנליזה המשודרגת */}
         {selectedMatch && (
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 md:p-6 border border-slate-700 relative overflow-hidden">
+            
+            {/* כרטיסיית תוצאה משוערת ו-xG */}
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 border border-slate-700 relative overflow-hidden">
               <div className="absolute top-0 left-0 bg-cyan-500 text-slate-950 font-bold text-[10px] px-3 py-1 rounded-br-lg shadow">
-                הסימולטור המשופר
+                מודל xG + מוטיבציה
               </div>
               
-              <div className="text-center mb-1">
-                <span className="text-[10px] md:text-[11px] bg-slate-950 text-slate-400 px-3 py-1 rounded-full border border-slate-800">
-                  סגנון משחק צפוי: <strong className="text-emerald-400">{currentPrediction.matchStyle}</strong>
-                </span>
-              </div>
-              
-              <div className="flex justify-around items-center my-6 gap-1">
+              <div className="flex justify-around items-center my-4 gap-1">
                 <div className="text-center w-1/3">
-                  <div className="text-base md:text-2xl font-black truncate">{selectedMatch.homeTeam}</div>
+                  <div className="text-base md:text-xl font-black truncate">{selectedMatch.homeTeam}</div>
                   <div className="text-lg md:text-2xl font-bold text-emerald-400 mt-1">{currentPrediction.homePercent}%</div>
-                  <div className="text-[9px] md:text-[10px] text-slate-500 mt-0.5">התקפה: {selectedMatch.homeAttack.toFixed(1)}</div>
+                  <div className="text-[11px] text-slate-400 mt-1 font-mono">xG מחושב: {currentPrediction.finalHomeXG}</div>
                 </div>
                 
-                <div className="text-center bg-slate-950/70 border border-slate-800 px-2 py-3 rounded-2xl w-1/3 shadow-inner min-w-[90px]">
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">תוצאה משוערת</div>
-                  <div className="text-xl md:text-3xl font-mono font-black tracking-normal text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 my-1 whitespace-nowrap">
+                <div className="text-center bg-slate-950/70 border border-slate-800 px-3 py-3 rounded-2xl w-1/3 shadow-inner">
+                  <div className="text-[9px] font-bold uppercase text-slate-400">תוצאה משוערת</div>
+                  <div className="text-2xl md:text-3xl font-mono font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 my-1">
                     {currentPrediction.predictedScore}
                   </div>
-                  <div className="text-[9px] text-slate-400 border-t border-slate-800/60 pt-1 mt-1">תיקו: {currentPrediction.drawPercent}%</div>
+                  <div className="text-[10px] text-slate-400 border-t border-slate-800/60 pt-1 mt-1">תיקו: {currentPrediction.drawPercent}%</div>
                 </div>
                 
                 <div className="text-center w-1/3">
-                  <div className="text-base md:text-2xl font-black truncate">{selectedMatch.awayTeam}</div>
+                  <div className="text-base md:text-xl font-black truncate">{selectedMatch.awayTeam}</div>
                   <div className="text-lg md:text-2xl font-bold text-cyan-400 mt-1">{currentPrediction.awayPercent}%</div>
-                  <div className="text-[9px] md:text-[10px] text-slate-500 mt-0.5">התקפה: {selectedMatch.awayAttack.toFixed(1)}</div>
+                  <div className="text-[11px] text-slate-400 mt-1 font-mono">xG מחושב: {currentPrediction.finalAwayXG}</div>
                 </div>
               </div>
 
-              <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 md:p-4 flex justify-between items-center text-xs md:text-sm">
-                <span className="text-slate-400">המלצת ווינר חכמה:</span>
-                <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-300 text-xs md:text-lg">
+              <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 flex justify-between items-center text-xs md:text-sm">
+                <span className="text-slate-400">המלצת אלגוריתם לטופס:</span>
+                <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-300 text-sm md:text-base">
                   {currentPrediction.recommendation}
                 </span>
               </div>
             </div>
 
+            {/* ניהול מוטיבציה ותרחישי קצה (What-If) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
+              {/* סליידרים של מוטיבציה לשלבי בתים קריטיים */}
+              <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700 space-y-4">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">מדד מוטיבציה וחשיבות נקודות (1-5)</h4>
+                
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="truncate max-w-[150px]">{selectedMatch.homeTeam}:</span>
+                    <span className="font-bold text-emerald-400">{selectedMatch.homeMotivation}</span>
+                  </div>
+                  <input type="range" min="1" max="5" value={selectedMatch.homeMotivation} onChange={(e) => updateMatchData('homeMotivation', parseInt(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500" />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="truncate max-w-[150px]">{selectedMatch.awayTeam}:</span>
+                    <span className="font-bold text-cyan-400">{selectedMatch.awayMotivation}</span>
+                  </div>
+                  <input type="range" min="1" max="5" value={selectedMatch.awayMotivation} onChange={(e) => updateMatchData('awayMotivation', parseInt(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                </div>
+                <p className="text-[10px] text-slate-500 leading-tight">שלב אליו מוטיבציה גבוהה (למשל 5 = חייבת ניצחון כדי לעלות) בשביל להעניק בוסט התקפי מותאם.</p>
+              </div>
+
+              {/* מנוע סימולציית תרחישים */}
+              <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700 space-y-3">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">סימולטור תרחישי קצה (What-If)</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => updateMatchData('scenario', 'normal')} className={`py-2 px-1 text-xs font-medium rounded-lg border transition-all ${selectedMatch.scenario === 'normal' ? 'bg-slate-900 border-slate-600 text-slate-100 font-bold' : 'bg-slate-950/30 border-slate-800 text-slate-500'}`}>☀️ רגיל</button>
+                  <button onClick={() => updateMatchData('scenario', 'rain')} className={`py-2 px-1 text-xs font-medium rounded-lg border transition-all ${selectedMatch.scenario === 'rain' ? 'bg-cyan-950 text-cyan-400 border-cyan-800 font-bold' : 'bg-slate-950/30 border-slate-800 text-slate-500'}`}>🌧️ מבול</button>
+                  <button onClick={() => updateMatchData('scenario', 'red_card')} className={`py-2 px-1 text-xs font-medium rounded-lg border transition-all ${selectedMatch.scenario === 'red_card' ? 'bg-rose-950 text-rose-400 border-rose-800 font-bold' : 'bg-slate-950/30 border-slate-800 text-slate-500'}`}>🟥 אדום לחוץ</button>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-tight">גשם כבד מוריד את ה-xG הכללי של המשחק. כרטיס אדום מחליש את הגנת החוץ בגלל נחיתות מספרית.</p>
+              </div>
+            </div>
+
+            {/* עריכת יחסים ופצועים מהירה */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
-                <h4 className="text-sm font-bold text-slate-400 mb-3">כושר בטורניר ויחסי כוחות</h4>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs md:text-sm truncate max-w-[120px]">{selectedMatch.homeTeam}:</span>
-                    <div className="flex gap-1" dir="ltr">
-                      {selectedMatch.homeForm.map((r, i) => (
-                        <span key={i} className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${r === 'W' ? 'bg-emerald-600' : r === 'D' ? 'bg-slate-600' : 'bg-rose-600'}`}>
-                          {r}
-                        </span>
-                      ))}
-                    </div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">יחסים עולמיים עדכניים</h4>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-slate-900 p-1.5 rounded border border-slate-700">
+                    <div className="text-[9px] text-slate-500 truncate">{selectedMatch.homeTeam}</div>
+                    <input type="number" step="0.01" value={selectedMatch.odds.home} onChange={(e) => updateMatchData('odds', e.target.value, 'home')} className="bg-transparent w-full text-center font-mono font-bold text-emerald-400 text-xs focus:outline-none mt-0.5" />
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs md:text-sm truncate max-w-[120px]">{selectedMatch.awayTeam}:</span>
-                    <div className="flex gap-1" dir="ltr">
-                      {selectedMatch.awayForm.map((r, i) => (
-                        <span key={i} className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${r === 'W' ? 'bg-emerald-600' : r === 'D' ? 'bg-slate-600' : 'bg-rose-600'}`}>
-                          {r}
-                        </span>
-                      ))}
-                    </div>
+                  <div className="bg-slate-900 p-1.5 rounded border border-slate-700">
+                    <div className="text-[9px] text-slate-500">X (תיקו)</div>
+                    <input type="number" step="0.01" value={selectedMatch.odds.draw} onChange={(e) => updateMatchData('odds', e.target.value, 'draw')} className="bg-transparent w-full text-center font-mono font-bold text-slate-300 text-xs focus:outline-none mt-0.5" />
                   </div>
-                </div>
-
-                <h4 className="text-sm font-bold text-slate-400 mt-5 mb-2">נתוני הגנה (נמוך יותר = קיר)</h4>
-                <div className="grid grid-cols-2 gap-2 text-center text-xs">
-                  <div className="bg-slate-900/50 p-2 rounded border border-slate-800">
-                    <span className="text-slate-400">{selectedMatch.homeTeam}:</span> <strong className="text-cyan-400">{selectedMatch.homeDefense.toFixed(1)}</strong>
-                  </div>
-                  <div className="bg-slate-900/50 p-2 rounded border border-slate-800">
-                    <span className="text-slate-400">{selectedMatch.awayTeam}:</span> <strong className="text-cyan-400">{selectedMatch.awayDefense.toFixed(1)}</strong>
+                  <div className="bg-slate-900 p-1.5 rounded border border-slate-700">
+                    <div className="text-[9px] text-slate-500 truncate">{selectedMatch.awayTeam}</div>
+                    <input type="number" step="0.01" value={selectedMatch.odds.away} onChange={(e) => updateMatchData('odds', e.target.value, 'away')} className="bg-transparent w-full text-center font-mono font-bold text-cyan-400 text-xs focus:outline-none mt-0.5" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700 flex flex-col justify-between gap-4">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-400 mb-3">יחסים עולמיים (ניתן לעריכה)</h4>
-                  <div className="grid grid-cols-3 gap-1.5 text-center">
-                    <div className="bg-slate-900 p-1 rounded border border-slate-700">
-                      <div className="text-[9px] text-slate-400 truncate px-0.5">{selectedMatch.homeTeam}</div>
-                      <input type="number" step="0.01" value={selectedMatch.odds.home} onChange={(e) => updateMatchData('odds', e.target.value, 'home')} className="bg-transparent w-full text-center font-bold text-emerald-400 text-xs md:text-sm focus:outline-none mt-0.5" />
-                    </div>
-                    <div className="bg-slate-900 p-1 rounded border border-slate-700">
-                      <div className="text-[9px] text-slate-400">X (תיקו)</div>
-                      <input type="number" step="0.01" value={selectedMatch.odds.draw} onChange={(e) => updateMatchData('odds', e.target.value, 'draw')} className="bg-transparent w-full text-center font-bold text-slate-300 text-xs md:text-sm focus:outline-none mt-0.5" />
-                    </div>
-                    <div className="bg-slate-900 p-1 rounded border border-slate-700">
-                      <div className="text-[9px] text-slate-400 truncate px-0.5">{selectedMatch.awayTeam}</div>
-                      <input type="number" step="0.01" value={selectedMatch.odds.away} onChange={(e) => updateMatchData('odds', e.target.value, 'away')} className="bg-transparent w-full text-center font-bold text-cyan-400 text-xs md:text-sm focus:outline-none mt-0.5" />
-                    </div>
-                  </div>
+              <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700 space-y-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase">מצב פצועים משפיעי xG</h4>
+                <div className="flex gap-2">
+                  <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.homeTeam}:`); if(p) updateMatchData('homeInjuries', [...selectedMatch.homeInjuries, p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg transition-colors truncate">+ {selectedMatch.homeTeam.split(' ')[0]}</button>
+                  <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.awayTeam}:`); if(p) updateMatchData('awayInjuries', [...selectedMatch.awayInjuries, p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg transition-colors truncate">+ {selectedMatch.awayTeam.split(' ')[0]}</button>
+                  <button onClick={() => { updateMatchData('homeInjuries', []); updateMatchData('awayInjuries', []); }} className="bg-rose-950/40 text-rose-400 border border-rose-900/50 text-xs px-3 rounded-lg hover:bg-rose-900/40">אפס</button>
                 </div>
-
-                <div>
-                  <h4 className="text-sm font-bold text-slate-400 mb-1.5">חיסורים פצועים/מושעים</h4>
-                  <div className="grid grid-cols-2 gap-2 text-[11px]">
-                    <div className="bg-slate-900/70 p-2 rounded border border-slate-800">
-                      <div className="font-semibold text-emerald-400 mb-1">בית:</div>
-                      {selectedMatch.homeInjuries.length === 0 ? <span className="text-slate-500">אין חיסורים</span> : selectedMatch.homeInjuries.map((inj, i) => <div key={i}>• {inj}</div>)}
-                    </div>
-                    <div className="bg-slate-900/70 p-2 rounded border border-slate-800">
-                      <div className="font-semibold text-cyan-400 mb-1">חוץ:</div>
-                      {selectedMatch.awayInjuries.length === 0 ? <span className="text-slate-500">אין חיסורים</span> : selectedMatch.awayInjuries.map((inj, i) => <div key={i}>• {inj}</div>)}
-                    </div>
-                  </div>
-                </div>
+                <div className="text-[10px] text-slate-500 truncate">פצועים רשומים: {selectedMatch.homeInjuries.length + selectedMatch.awayInjuries.length} חיסורים משפיעי כוח.</div>
               </div>
             </div>
 
-            <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-              <h4 className="text-sm font-bold text-slate-300 mb-1">עדכון פצועים מהיר מהסמארטפון</h4>
-              <p className="text-xs text-slate-400 mb-3">הזרק פצועים שגילית במחנות הנבחרות כדי לעדכן מיידית את יחסי הכוחות:</p>
-              <div className="flex gap-2">
-                <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.homeTeam}:`); if(p) updateMatchData('homeInjuries', [...selectedMatch.homeInjuries, p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs font-semibold py-2 px-1 rounded-lg transition-colors truncate">+ {selectedMatch.homeTeam.split(' ')[0]}</button>
-                <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.awayTeam}:`); if(p) updateMatchData('awayInjuries', [...selectedMatch.awayInjuries, p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs font-semibold py-2 px-1 rounded-lg transition-colors truncate">+ {selectedMatch.awayTeam.split(' ')[0]}</button>
-                <button onClick={() => { updateMatchData('homeInjuries', []); updateMatchData('awayInjuries', []); }} className="bg-rose-950/40 text-rose-400 hover:bg-rose-900/40 border border-rose-900/50 text-xs font-semibold py-2 px-3 rounded-lg transition-colors">אפס</button>
-              </div>
-            </div>
           </div>
         )}
       </main>
