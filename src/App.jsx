@@ -56,7 +56,7 @@ export default function App() {
   useEffect(() => {
     const fetchRealOdds = async () => {
       try {
-        // --- בדיקת מנגנון LOCAL STORAGE CACHE לטעינה מהירה במובייל ---
+        // מנגנון LOCAL STORAGE CACHE לטעינה מהירה במובייל
         const cachedData = localStorage.getItem('world_cup_matches_cache');
         const cachedTime = localStorage.getItem('world_cup_cache_time');
         const FOUR_HOURS = 4 * 60 * 60 * 1000;
@@ -115,7 +115,6 @@ export default function App() {
             };
           });
 
-          // שמירה ב-Cache לפעמים הבאות
           localStorage.setItem('world_cup_matches_cache', JSON.stringify(formattedMatches));
           localStorage.setItem('world_cup_cache_time', Date.now().toString());
 
@@ -132,7 +131,6 @@ export default function App() {
     fetchRealOdds();
   }, []);
 
-  // אלגוריתם שקלול וחיזוי תוצאה
   const calculatePrediction = (match) => {
     if (!match) return null;
 
@@ -265,8 +263,8 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* טור: לוח רשימת המשחקים */}
-        <div className="lg:col-span-1 space-y-4 max-h-[60vh] lg:max-h-[75vh] overflow-y-auto pr-1 scrollbar-thin order-2 lg:order-none">
+        {/* טור: לוח רשימת המשחקים - מופיע ראשון למעלה במובייל */}
+        <div className="lg:col-span-1 space-y-4 max-h-[60vh] lg:max-h-[75vh] overflow-y-auto pr-1 scrollbar-thin">
           <h2 className="text-lg font-bold text-slate-300 mb-2">לוח המשחקים ({matches.length})</h2>
           {matches.map(match => {
             const pred = predictions[match.id];
@@ -296,8 +294,8 @@ export default function App() {
           })}
         </div>
 
-        {/* טור מרכזי ושמאל: ניתוח תוצאה חי */}
-        <div className="lg:col-span-2 space-y-6 order-1 lg:order-none">
+        {/* טור מרכזי ושמאל: ניתוח תוצאה חי ונתונים נוספים - מופיע מתחת ללוח בגלילה במובייל */}
+        <div className="lg:col-span-2 space-y-6">
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 md:p-6 border border-slate-700 relative overflow-hidden">
             <div className="absolute top-0 left-0 bg-cyan-500 text-slate-950 font-bold text-[10px] px-3 py-1 rounded-br-lg shadow">
               הסימולטור המשופר
@@ -340,7 +338,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* קוביות נתונים ויחסים */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
               <h4 className="text-sm font-bold text-slate-400 mb-3">כושר בטורניר ויחסי כוחות</h4>
@@ -413,7 +410,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* כפתורי הזרקת פצועים מהירה מהנייד */}
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
             <h4 className="text-sm font-bold text-slate-300 mb-1">עדכון פצועים מהיר מהסמארטפון</h4>
             <p className="text-xs text-slate-400 mb-3">הזרק פצועים שגילית במחנות הנבחרות כדי לעדכן מיידית את יחסי הכוחות:</p>
