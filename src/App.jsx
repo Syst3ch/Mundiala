@@ -18,7 +18,7 @@ export default function App() {
         }
 
         // מושך משחקי כדורגל קרובים מליגת האלופות (או טורניר גדול אחר שתבחר)
-        const response = await fetch(`https://api.the-odds-api.com/v4/sports/soccer_uefa_champions_league/odds/?apiKey=${apiKey}&regions=eu&markets=h2h`);
+        const response = await fetch(`https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/?apiKey=${apiKey}&regions=eu&markets=h2h`);
         const data = await response.json();
 
         if (data && Array.isArray(data)) {
