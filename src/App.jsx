@@ -1,4 +1,262 @@
-return (
+import React, { useState, useEffect } from 'react';
+
+// 1. מילון תרגום מורחב ומקיף - מונדיאל בלבד
+const TEAM_TRANSLATIONS = {
+  "Curaçao": "קוראסאו", "Curacao": "קוראסאו", "Cape Verde": "כף ורדה", "Cabo Verde": "כף ורדה",
+  "Suriname": "סורינאם", "Haiti": "האיטי", "Trinidad and Tobago": "טרינידד וטובגו", "Guyana": "גיאנה", "Guatemala": "גואטמלה",
+  "France": "צרפת", "England": "אנגליה", "Spain": "ספרד", "Germany": "גרמניה", "Portugal": "פורטוגל",
+  "Netherlands": "הולנד", "Italy": "איטליה", "Belgium": "בלגיה", "Croatia": "קרואטיה", "Denmark": "דנמרק",
+  "Switzerland": "שוויץ", "Austria": "אוסטריה", "Ukraine": "אוקראינה", "Turkey": "טורקיה", "Poland": "פולין",
+  "Hungary": "הונגריה", "Sweden": "שבדיה", "Norway": "נורבגיה", "Czech Republic": "צ'כיה", "Scotland": "סקוטלנד",
+  "Wales": "ויילס", "Greece": "יוון", "Serbia": "סרביה", "Romania": "רומניה", "Argentina": "ארגנטינה",
+  "Brazil": "ברזיל", "Uruguay": "אורוגוואי", "Colombia": "קולומביה", "Ecuador": "אקוודור", "Peru": "פרו",
+  "Chile": "צ'ילה", "Paraguay": "פרגוואי", "Venezuela": "ונצואלה", "Bolivia": "בוליביה", "USA": "ארה\"ב",
+  "United States": "ארה\"ב", "Mexico": "מקסיקו", "Canada": "קנדה", "Costa Rica": "קוסטה ריקה", "Panama": "פנמה",
+  "Jamaica": "ג'מייקה", "Honduras": "הונדורס", "El Salvador": "אל סלבדור", "Morocco": "מרוקו", "Senegal": "סנגל",
+  "Tunisia": "תוניסיה", "Algeria": "אלג'יריה", "Egypt": "מצרים", "Nigeria": "ניגריה", "Cameroon": "קמרון",
+  "Ghana": "גאנה", "Ivory Coast": "חוף השנהב", "Mali": "מאלי", "Burkina Faso": "בורקינה פאסו", "South Africa": "דרום אפריקה",
+  "DR Congo": "קונגו", "Congo": "קונגו", "Zambia": "זמביה", "Japan": "יפן", "South Korea": "דרום קוריאה",
+  "Iran": "איראן", "Saudi Arabia": "סעודיה", "Australia": "אוסטרליה", "Qatar": "קטאר", "Iraq": "עיראק",
+  "UAE": "איחוד האמירויות", "Uzbekistan": "אוזבקיסטן", "China": "סין", "Oman": "עומאן", "Jordan": "ירדן", "New Zealand": "ניו זילנד"
+};
+
+const translateTeam = (name) => TEAM_TRANSLATIONS[name] || name;
+
+// 2. מנגנון Seed שמייצר פרופיל סגנון משחק ריאליסטי
+const generateDynamicStats = (teamName) => {
+  if (!teamName) return { form: ["D", "D", "D", "D", "D"], h2h: { homeWins: 1, draws: 3, awayWins: 1 }, attack: 1.2, defense: 1.1 };
+  const code = teamName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  
+  const formsPool = [
+    ["W", "W", "D", "W", "L"], ["W", "L", "W", "W", "W"], ["D", "D", "W", "L", "W"],
+    ["L", "W", "L", "W", "D"], ["W", "W", "W", "D", "W"], ["D", "W", "D", "W", "W"]
+  ];
+  const h2hPool = [
+    { homeWins: 3, draws: 1, awayWins: 1 }, { homeWins: 2, draws: 2, awayWins: 1 },
+    { homeWins: 1, draws: 3, awayWins: 1 }
+  ];
+
+  const attackFactor = 0.8 + ((code % 15) / 10);
+  const defenseFactor = 0.6 + (((code + 5) % 12) / 10);
+
+  return {
+    form: formsPool[code % formsPool.length],
+    h2h: h2hPool[(code + 3) % h2hPool.length],
+    attack: attackFactor,
+    defense: defenseFactor
+  };
+};
+
+export default function App() {
+  const [matches, setMatches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [predictions, setPredictions] = useState({});
+
+  useEffect(() => {
+    const fetchRealOdds = async () => {
+      try {
+        // --- בדיקת מנגנון LOCAL STORAGE CACHE ---
+        const cachedData = localStorage.getItem('world_cup_matches_cache');
+        const cachedTime = localStorage.getItem('world_cup_cache_time');
+        const FOUR_HOURS = 4 * 60 * 60 * 1000; // זמן ה-Cache במילישניות
+
+        if (cachedData && cachedTime && (Date.now() - cachedTime < FOUR_HOURS)) {
+          const parsedMatches = JSON.parse(cachedData);
+          setMatches(parsedMatches);
+          setSelectedMatch(parsedMatches[0]);
+          setLoading(false);
+          console.log("⚡ הנתונים נטענו מיידית מה-Cache המקומי במכשיר!");
+          return; // עוצר כאן, חסך פנייה לרשת וזמן טעינה במובייל!
+        }
+
+        // אם אין Cache או שהוא פג תוקף - פונים ל-API
+        const apiKey = import.meta.env.VITE_ODDS_API_KEY;
+        if (!apiKey) {
+          console.error("Missing API Key");
+          setLoading(false);
+          return;
+        }
+
+        const response = await fetch(`https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/?apiKey=${apiKey}&regions=eu&markets=h2h`);
+        const data = await response.json();
+
+        if (data && Array.isArray(data)) {
+          const formattedMatches = data.map((game, index) => {
+            const bookmaker = game.bookmakers[0];
+            const market = bookmaker?.markets?.find(m => m.key === 'h2h');
+            
+            const homeOdds = market?.outcomes?.find(o => o.name === game.home_team)?.price || 2.20;
+            const awayOdds = market?.outcomes?.find(o => o.name === game.away_team)?.price || 2.60;
+            const drawOdds = market?.outcomes?.find(o => o.name === 'Draw')?.price || 3.10;
+
+            const homeStats = generateDynamicStats(game.home_team);
+            const awayStats = generateDynamicStats(game.away_team);
+
+            const dateObj = new Date(game.commence_time);
+            const localDate = dateObj.toLocaleDateString('he-IL', { year: 'numeric', month: '2-digit', day: '2-digit' });
+            const localTime = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+            return {
+              id: game.id || index,
+              homeTeam: translateTeam(game.home_team),
+              awayTeam: translateTeam(game.away_team),
+              date: localDate,
+              time: localTime,
+              odds: { home: homeOdds, draw: drawOdds, away: awayOdds },
+              homeForm: homeStats.form, 
+              awayForm: awayStats.form,
+              h2h: homeStats.h2h,
+              homeAttack: homeStats.attack,
+              homeDefense: homeStats.defense,
+              awayAttack: awayStats.attack,
+              awayDefense: awayStats.defense,
+              homeInjuries: [],
+              awayInjuries: []
+            };
+          });
+
+          // שמירה בתוך ה-Cache המקומי לפעמים הבאות
+          localStorage.setItem('world_cup_matches_cache', JSON.stringify(formattedMatches));
+          localStorage.setItem('world_cup_cache_time', Date.now().toString());
+
+          setMatches(formattedMatches);
+          setSelectedMatch(formattedMatches[0]);
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error("שגיאה במשיכת הנתונים:", error);
+        setLoading(false);
+      }
+    };
+
+    fetchRealOdds();
+  }, []);
+
+  // אלגוריתם שקלול מתקדם
+  const calculatePrediction = (match) => {
+    if (!match) return null;
+
+    const getFormPoints = (form) => form.reduce((acc, res) => acc + (res === 'W' ? 3 : res === 'D' ? 1 : 0), 0);
+    const homeFormPoints = getFormPoints(match.homeForm);
+    const awayFormPoints = getFormPoints(match.awayForm);
+
+    const totalH2H = match.h2h.homeWins + match.h2h.draws + match.h2h.awayWins;
+    const homeH2hRatio = totalH2H > 0 ? match.h2h.homeWins / totalH2H : 0.33;
+    const awayH2hRatio = totalH2H > 0 ? match.h2h.awayWins / totalH2H : 0.33;
+
+    const impliedHomeProb = 1 / match.odds.home;
+    const impliedDrawProb = 1 / match.odds.draw;
+    const impliedAwayProb = 1 / match.odds.away;
+    const totalProb = impliedHomeProb + impliedDrawProb + impliedAwayProb;
+    
+    const marketHomeProb = impliedHomeProb / totalProb;
+    const marketAwayProb = impliedAwayProb / totalProb;
+
+    const homeInjuryPenalty = match.homeInjuries.length * 1.5;
+    const awayInjuryPenalty = match.awayInjuries.length * 1.5;
+
+    let homePower = (homeFormPoints * 0.4) + (homeH2hRatio * 20) + (marketHomeProb * 45) - homeInjuryPenalty;
+    let awayPower = (awayFormPoints * 0.4) + (awayH2hRatio * 20) + (marketAwayProb * 45) - awayInjuryPenalty;
+
+    homePower = Math.max(homePower, 5);
+    awayPower = Math.max(awayPower, 5);
+
+    const totalPower = homePower + awayPower + 12;
+    const homePercent = Math.round((homePower / totalPower) * 100);
+    const awayPercent = Math.round((awayPower / totalPower) * 100);
+    const drawPercent = 100 - homePercent - awayPercent;
+
+    let baseHomeGoals = marketHomeProb * 2.8; 
+    let baseAwayGoals = marketAwayProb * 2.5;
+
+    let finalHomeExpected = baseHomeGoals * (match.homeAttack / match.awayDefense);
+    let finalAwayExpected = baseAwayGoals * (match.awayAttack / match.homeDefense);
+
+    if (match.homeInjuries.length > 0) finalHomeExpected *= 0.85;
+    if (match.awayInjuries.length > 0) finalAwayExpected *= 0.85;
+
+    let homeGoals = Math.round(finalHomeExpected);
+    let awayGoals = Math.round(finalAwayExpected);
+
+    if (homeGoals > 5) homeGoals = 4;
+    if (awayGoals > 5) awayGoals = 4;
+
+    if (homePercent - awayPercent > 25 && homeGoals <= awayGoals) {
+      homeGoals = awayGoals + 1;
+    } else if (awayPercent - homePercent > 25 && awayGoals <= homeGoals) {
+      awayGoals = homeGoals + 1;
+    } else if (Math.abs(homePercent - awayPercent) < 8 && homeGoals !== awayGoals) {
+      if (homeGoals + awayGoals > 4) { homeGoals = 2; awayGoals = 2; }
+      else if (homeGoals + awayGoals === 1) { homeGoals = 0; awayGoals = 0; }
+      else { homeGoals = 1; awayGoals = 1; }
+    }
+
+    let recommendation = "תיקו קשוח (X)";
+    if (homePercent > awayPercent && homePercent > 42) recommendation = `ניצחון ל${match.homeTeam} (1)`;
+    if (awayPercent > homePercent && awayPercent > 42) recommendation = `ניצחון ל${match.awayTeam} (2)`;
+
+    let matchStyle = "מאוזן";
+    if (match.homeAttack > 1.6 && match.awayAttack > 1.6) matchStyle = "משחק התקפי פתוח (חגיגת שערים)";
+    else if (match.homeDefense > 1.3 && match.awayDefense > 1.3) matchStyle = "טקטי ומבוקר (בונקרים הדדיים)";
+    else if (match.homeAttack > 1.6) matchStyle = `לחץ כבד של ${match.homeTeam}`;
+    else if (match.awayAttack > 1.6) matchStyle = `לחץ כבד של ${match.awayTeam}`;
+
+    return { homePercent, drawPercent, awayPercent, predictedScore: `${homeGoals} - ${awayGoals}`, recommendation, matchStyle };
+  };
+
+  useEffect(() => {
+    if (matches.length > 0) {
+      const newPredictions = {};
+      matches.forEach(m => {
+        newPredictions[m.id] = calculatePrediction(m);
+      });
+      setPredictions(newPredictions);
+    }
+  }, [matches]);
+
+  const updateMatchData = (field, value, subField = null) => {
+    const updated = matches.map(m => {
+      if (m.id === selectedMatch.id) {
+        if (subField) {
+          return { ...m, [field]: { ...m[field], [subField]: parseFloat(value) || value } };
+        }
+        return { ...m, [field]: value };
+      }
+      return m;
+    });
+    setMatches(updated);
+    setSelectedMatch(updated.find(m => m.id === selectedMatch.id));
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-100" dir="rtl">
+        <div className="text-center space-y-3">
+          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-sm font-semibold tracking-wide text-emerald-400">האלגוריתם מנתח סגנונות משחק ומחשב תוצאות...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (matches.length === 0) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-100 p-6" dir="rtl">
+        <div className="text-center max-w-md bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
+          <div className="text-3xl mb-3">🌍</div>
+          <h2 className="text-xl font-bold text-slate-200 mb-2">מונדיאל Predictor מחובר פיקס!</h2>
+          <p className="text-slate-400 text-sm leading-relaxed">
+            מערכת ניתוח השערים וסגנונות המשחק מוכנה לפעולה. ברגע שיעלו יחסי הימורים רשמיים למשחקים הבאים במונדיאל, הלוח יתמלא פה אוטומטית.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const currentPrediction = predictions[selectedMatch?.id] || { homePercent: 33, drawPercent: 34, awayPercent: 33, predictedScore: "0-0", recommendation: "מחשב...", matchStyle: "בבדיקה" };
+
+  return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans p-4 md:p-8" dir="rtl">
       <header className="max-w-6xl mx-auto mb-6 text-center md:text-right border-b border-slate-800 pb-4">
         <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">
@@ -7,10 +265,8 @@ return (
         <p className="text-slate-400 text-sm mt-1">מערכת שקלול דינמית: סגנון התקפה/הגנה ויחסי בוקמייקרים חיים</p>
       </header>
 
-      {/* שינוי קל ב-Grid: במובייל הניתוח (order-1) יופיע מעל רשימת המשחקים (order-2) */}
       <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* טור: רשימת המשחקים - מקבל order-2 במובייל וחוזר ל-order-none במסכים גדולים */}
+        {/* טור: רשימת המשחקים */}
         <div className="lg:col-span-1 space-y-4 max-h-[60vh] lg:max-h-[75vh] overflow-y-auto pr-1 scrollbar-thin order-2 lg:order-none">
           <h2 className="text-lg font-bold text-slate-300 mb-2">לוח המשחקים ({matches.length})</h2>
           {matches.map(match => {
@@ -41,7 +297,7 @@ return (
           })}
         </div>
 
-        {/* טור מרכזי ושמאל: ניתוח תוצאה חי - מקבל order-1 כדי לקפוץ לראש המסך במובייל */}
+        {/* טור מרכזי ושמאל: ניתוח תוצאה חי */}
         <div className="lg:col-span-2 space-y-6 order-1 lg:order-none">
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 md:p-6 border border-slate-700 relative overflow-hidden">
             <div className="absolute top-0 left-0 bg-cyan-500 text-slate-950 font-bold text-[10px] px-3 py-1 rounded-br-lg shadow">
@@ -84,7 +340,6 @@ return (
             </div>
           </div>
 
-          {/* קוביות נתונים ויחסים */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
               <h4 className="text-sm font-bold text-slate-400 mb-3">כושר בטורניר ויחסי כוחות</h4>
@@ -170,3 +425,4 @@ return (
       </main>
     </div>
   );
+}
