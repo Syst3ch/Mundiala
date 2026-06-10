@@ -21,7 +21,6 @@ const TEAM_TRANSLATIONS = {
 
 const translateTeam = (name) => TEAM_TRANSLATIONS[name] || name;
 
-// מחולל נתונים מורחב הכולל בסיס xG התקפי והגנתי ריאליסטי לפי נבחרת
 const generateDynamicStats = (teamName) => {
   if (!teamName) return { form: ["D", "D", "D", "D", "D"], h2h: { homeWins: 1, draws: 3, awayWins: 1 }, attack: 1.2, defense: 1.1, xG_attack: 1.4, xG_defense: 1.1 };
   const code = teamName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -35,7 +34,6 @@ const generateDynamicStats = (teamName) => {
     { homeWins: 1, draws: 3, awayWins: 1 }
   ];
 
-  // חישוב xG בסיסי נע בין 1.0 ל-2.5 להתקפה, ו-0.7 ל-2.0 להגנה
   const xG_attack = parseFloat((1.0 + ((code % 16) / 10)).toFixed(2));
   const xG_defense = parseFloat((0.6 + (((code + 4) % 13) / 10)).toFixed(2));
 
@@ -88,7 +86,6 @@ export default function App() {
       const data = await response.json();
 
       if (data && Array.isArray(data)) {
-        // סינון קשוח להימורים בלבד: רק משחקים שהמרקט שלהם עדיין פתוח לחלוטין (לפני שריקת הפתיחה)
         const activeGames = data.filter(game => {
           const bookmaker = game.bookmakers?.[0];
           const market = bookmaker?.markets?.find(m => m.key === 'h2h');
@@ -112,6 +109,7 @@ export default function App() {
 
           return {
             id: game.id || index,
+            rawTime: dateObj.getTime(),
             homeTeam: translateTeam(game.home_team),
             awayTeam: translateTeam(game.away_team),
             date: localDate,
@@ -122,22 +120,21 @@ export default function App() {
             h2h: stats.h2h,
             homeAttack: stats.attack,
             homeDefense: stats.defense,
-            awayAttack: awayStats.attack,
-            awayDefense: awayStats.defense,
-            // משתני השדרוגים החדשים:
+            awayAttack: stats.attack,
+            awayDefense: stats.defense,
             homeXG: stats.xG_attack,
             homeExpectedConcedeXG: stats.xG_defense,
             awayXG: awayStats.xG_attack,
             awayExpectedConcedeXG: awayStats.xG_defense,
-            homeMotivation: 3, // ברירת מחדל שלב בתים רגיל
+            homeMotivation: 3, 
             awayMotivation: 3,
-            scenario: "normal", // normal | rain | red_card
+            scenario: "normal", 
             homeInjuries: [],
             awayInjuries: []
           };
         });
 
-        formattedMatches.sort((a, b) => a.id > b.id ? 1 : -1);
+        formattedMatches.sort((a, b) => a.rawTime - b.rawTime);
 
         localStorage.setItem('world_cup_matches_cache', JSON.stringify(formattedMatches));
         localStorage.setItem('world_cup_cache_time', now.toString());
@@ -161,28 +158,24 @@ export default function App() {
   const calculatePrediction = (match) => {
     if (!match) return null;
 
-    // 1. שילוב מדדי ה-xG ישירות לתוך הבסיס הסטטיסטי
     let baseHomeXG = match.homeXG;
     let baseAwayXG = match.awayXG;
 
-    // 2. שקלול פקטור המוטיבציה (סליידרים 1-5)
     const motivationDiff = match.homeMotivation - match.awayMotivation;
     baseHomeXG += motivationDiff * 0.15;
     baseAwayXG -= motivationDiff * 0.15;
 
-    // 3. שקלול סימולציות תרחישי קצה (What-If)
     let homeDefFactor = match.homeDefense;
     let awayDefFactor = match.awayDefense;
 
     if (match.scenario === "rain") {
-      baseHomeXG *= 0.75; // גשם מוריד איכות מצבי הבקעה בצורה גורפת
+      baseHomeXG *= 0.75; 
       baseAwayXG *= 0.75;
     } else if (match.scenario === "red_card") {
-      awayDefFactor *= 1.6; // כרטיס אדום מפרק את הגנת החוץ
+      awayDefFactor *= 1.6; 
       baseHomeXG *= 1.3;
     }
 
-    // 4. שילוב פציעות ויחסי שוק ההימורים הרשמיים
     const impliedHomeProb = 1 / match.odds.home;
     const impliedAwayProb = 1 / match.odds.away;
     const totalProb = impliedHomeProb + impliedAwayProb + (1 / match.odds.draw);
@@ -192,14 +185,12 @@ export default function App() {
     if (match.homeInjuries.length > 0) baseHomeXG *= (1 - (match.homeInjuries.length * 0.08));
     if (match.awayInjuries.length > 0) baseAwayXG *= (1 - (match.awayInjuries.length * 0.08));
 
-    // חישוב שערים סופי המבוסס על שילוב של xG התקפי מול xG ספיגה של היריבה ויחס השוק
     let finalHomeExpected = ((baseHomeXG * (1 / awayDefFactor)) + (marketHomeProb * 2.6)) / 2;
     let finalAwayExpected = ((baseAwayXG * (1 / homeDefFactor)) + (marketAwayProb * 2.3)) / 2;
 
     let homeGoals = Math.round(finalHomeExpected);
     let awayGoals = Math.round(finalAwayExpected);
 
-    // לוגיקת הכרעה במקרה של שוויון/פערים מובהקים
     let homePower = (marketHomeProb * 50) + (match.homeMotivation * 5);
     let awayPower = (marketAwayProb * 50) + (match.awayMotivation * 5);
     const totalPower = homePower + awayPower + 10;
@@ -255,7 +246,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-100" dir="rtl">
         <div className="text-center space-y-3">
           <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-sm font-semibold tracking-wide text-emerald-400">מריץ סימולציית xG ומנתח יחסי בוקמייקרים עולמיים...</p>
+          <p className="text-sm font-semibold tracking-wide text-emerald-400">יוצר חלוקה קלנדרית ומפריד ימי משחק...</p>
         </div>
       </div>
     );
@@ -277,6 +268,14 @@ export default function App() {
 
   const currentPrediction = predictions[selectedMatch?.id] || { homePercent: 33, drawPercent: 34, awayPercent: 33, predictedScore: "0-0", recommendation: "מחשב...", finalHomeXG: "0.0", finalAwayXG: "0.0" };
 
+  // לוגיקה חכמה לקיבוץ המשחקים לפי תאריך
+  const groupedMatches = matches.reduce((groups, match) => {
+    const date = match.date;
+    if (!groups[date]) groups[date] = [];
+    groups[date].push(match);
+    return groups;
+  }, {});
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans p-4 md:p-8" dir="rtl">
       <header className="max-w-6xl mx-auto mb-6 flex flex-col sm:flex-row justify-between items-center border-b border-slate-800 pb-4 gap-4">
@@ -295,40 +294,53 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* טור ימני: לוח משחקים לפני פתיחה */}
-        <div className="lg:col-span-1 space-y-4 max-h-[60vh] lg:max-h-[75vh] overflow-y-auto pr-1 scrollbar-thin">
-          <h2 className="text-lg font-bold text-slate-300 mb-2">מסחר פתוח ({matches.length})</h2>
-          {matches.map(match => {
-            const pred = predictions[match.id];
-            return (
-              <button
-                key={match.id}
-                onClick={() => setSelectedMatch(match)}
-                className={`w-full text-right p-4 rounded-xl border transition-all ${
-                  selectedMatch?.id === match.id 
-                    ? 'bg-slate-800 border-emerald-500 shadow-lg shadow-emerald-500/10' 
-                    : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
-                }`}
-              >
-                <div className="flex justify-between items-center text-[11px] mb-2">
-                  <span className="text-slate-400">{match.date} | {match.time}</span>
-                  <span className="font-bold text-emerald-400">{pred ? pred.predictedScore : ''}</span>
-                </div>
-                <div className="flex justify-between items-center font-bold text-sm gap-2">
-                  <span className="truncate max-w-[110px]">{match.homeTeam}</span>
-                  <span className="text-slate-500 text-xs font-normal">VS</span>
-                  <span className="truncate max-w-[110px]">{match.awayTeam}</span>
-                </div>
-              </button>
-            );
-          })}
+        
+        {/* טור ימני: לוח משחקים - כעת מחולק קטגורית לפי ימים ושעות */}
+        <div className="lg:col-span-1 space-y-5 max-h-[60vh] lg:max-h-[75vh] overflow-y-auto pr-1 scrollbar-thin">
+          <h2 className="text-lg font-bold text-slate-300">לוח משחקים לפי ימים ({matches.length})</h2>
+          
+          {Object.keys(groupedMatches).map(date => (
+            <div key={date} className="space-y-2">
+              {/* כותרת יום מפרידה */}
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 bg-slate-800/80 backdrop-blur border border-slate-700/60 px-3 py-1.5 rounded-lg inline-block shadow-sm">
+                📅 משחקי ה-{date}
+              </div>
+              
+              {/* רשימת המשחקים השייכת לאותו יום */}
+              <div className="space-y-2 border-r-2 border-slate-800 pr-2 mr-1">
+                {groupedMatches[date].map(match => {
+                  const pred = predictions[match.id];
+                  return (
+                    <button
+                      key={match.id}
+                      onClick={() => setSelectedMatch(match)}
+                      className={`w-full text-right p-3.5 rounded-xl border transition-all ${
+                        selectedMatch?.id === match.id 
+                          ? 'bg-slate-800 border-emerald-500 shadow-lg shadow-emerald-500/10' 
+                          : 'bg-slate-800/40 border-slate-700/70 hover:border-slate-600 hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center text-[11px] mb-1.5">
+                        <span className="text-emerald-400 font-semibold font-mono">⏰ {match.time}</span>
+                        <span className="font-bold text-slate-400 text-xs">{pred ? pred.predictedScore : ''}</span>
+                      </div>
+                      <div className="flex justify-between items-center font-bold text-xs md:text-sm gap-2">
+                        <span className="truncate max-w-[105px]">{match.homeTeam}</span>
+                        <span className="text-slate-600 text-[10px] font-normal">VS</span>
+                        <span className="truncate max-w-[105px]">{match.awayTeam}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* טור מרכזי ושמאל: האנליזה המשודרגת */}
+        {/* טור מרכזי ושמאל: האנליזה */}
         {selectedMatch && (
           <div className="lg:col-span-2 space-y-6">
             
-            {/* כרטיסיית תוצאה משוערת ו-xG */}
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 border border-slate-700 relative overflow-hidden">
               <div className="absolute top-0 left-0 bg-cyan-500 text-slate-950 font-bold text-[10px] px-3 py-1 rounded-br-lg shadow">
                 מודל xG + מוטיבציה
@@ -364,10 +376,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* ניהול מוטיבציה ותרחישי קצה (What-If) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              
-              {/* סליידרים של מוטיבציה לשלבי בתים קריטיים */}
               <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700 space-y-4">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">מדד מוטיבציה וחשיבות נקודות (1-5)</h4>
                 
@@ -386,10 +395,8 @@ export default function App() {
                   </div>
                   <input type="range" min="1" max="5" value={selectedMatch.awayMotivation} onChange={(e) => updateMatchData('awayMotivation', parseInt(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
                 </div>
-                <p className="text-[10px] text-slate-500 leading-tight">שלב אליו מוטיבציה גבוהה (למשל 5 = חייבת ניצחון כדי לעלות) בשביל להעניק בוסט התקפי מותאם.</p>
               </div>
 
-              {/* מנוע סימולציית תרחישים */}
               <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700 space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">סימולטור תרחישי קצה (What-If)</h4>
                 <div className="grid grid-cols-3 gap-2">
@@ -397,11 +404,9 @@ export default function App() {
                   <button onClick={() => updateMatchData('scenario', 'rain')} className={`py-2 px-1 text-xs font-medium rounded-lg border transition-all ${selectedMatch.scenario === 'rain' ? 'bg-cyan-950 text-cyan-400 border-cyan-800 font-bold' : 'bg-slate-950/30 border-slate-800 text-slate-500'}`}>🌧️ מבול</button>
                   <button onClick={() => updateMatchData('scenario', 'red_card')} className={`py-2 px-1 text-xs font-medium rounded-lg border transition-all ${selectedMatch.scenario === 'red_card' ? 'bg-rose-950 text-rose-400 border-rose-800 font-bold' : 'bg-slate-950/30 border-slate-800 text-slate-500'}`}>🟥 אדום לחוץ</button>
                 </div>
-                <p className="text-[10px] text-slate-500 leading-tight">גשם כבד מוריד את ה-xG הכללי של המשחק. כרטיס אדום מחליש את הגנת החוץ בגלל נחיתות מספרית.</p>
               </div>
             </div>
 
-            {/* עריכת יחסים ופצועים מהירה */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700">
                 <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">יחסים עולמיים עדכניים</h4>
@@ -428,7 +433,6 @@ export default function App() {
                   <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.awayTeam}:`); if(p) updateMatchData('awayInjuries', [...selectedMatch.awayInjuries, p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg transition-colors truncate">+ {selectedMatch.awayTeam.split(' ')[0]}</button>
                   <button onClick={() => { updateMatchData('homeInjuries', []); updateMatchData('awayInjuries', []); }} className="bg-rose-950/40 text-rose-400 border border-rose-900/50 text-xs px-3 rounded-lg hover:bg-rose-900/40">אפס</button>
                 </div>
-                <div className="text-[10px] text-slate-500 truncate">פצועים רשומים: {selectedMatch.homeInjuries.length + selectedMatch.awayInjuries.length} חיסורים משפיעי כוח.</div>
               </div>
             </div>
 
