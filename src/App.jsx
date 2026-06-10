@@ -16,7 +16,7 @@ const TEAM_TRANSLATIONS = {
   "Ghana": "גאנה", "Ivory Coast": "חוף השנהב", "Mali": "מאלי", "Burkina Faso": "בורקינה פאסו", "South Africa": "דרום אפריקה",
   "DR Congo": "קונגו", "Congo": "קונגו", "Zambia": "זמביה", "Japan": "יפן", "South Korea": "דרום קוריאה",
   "Iran": "איראן", "Saudi Arabia": "סעודיה", "Australia": "אוסטרליה", "Qatar": "קטאר", "Iraq": "עיראק",
-  "UAE": "איחוד האמירויות", "Uzbekistan": "אוזבקיסטן", "China": "סין", "Oman": "עומאן", "Jordan": "ירדן", "New Zealand": "ניו זילנד"
+  "UAE": "איחוד האמירויות", "Uzbekistan": "אוזבקיסטן", "China": "סין", "Oman": "עומאן", "Jordan": "ירדן", "New Zealand": "ניו זילנד","Bosnia & Herzegovina": "בוסניה הרצגובינה"
 };
 
 const OPPONENTS_POOL = ["ברזיל", "צרפת", "גרמניה", "אנגליה", "ארגנטינה", "ספרד", "הולנד", "איטליה", "בלגיה", "פורטוגל", "מקסיקו", "ארה\"ב"];
@@ -32,7 +32,6 @@ const generateDynamicStats = (teamName) => {
     { homeWins: 1, draws: 3, awayWins: 1 }, { homeWins: 1, draws: 2, awayWins: 2 }
   ];
 
-  // מחולל היסטוריית 5 משחקים אחרונים עם תוצאות מדויקות ויריבות
   const lastResults = [];
   for (let i = 0; i < 5; i++) {
     const oppIndex = (code + i * 3) % OPPONENTS_POOL.length;
@@ -41,16 +40,16 @@ const generateDynamicStats = (teamName) => {
       opponent = OPPONENTS_POOL[(oppIndex + 1) % OPPONENTS_POOL.length];
     }
     
-    const outcomeType = (code + i * 7) % 3; // 0 = W, 1 = D, 2 = L
+    const outcomeType = (code + i * 7) % 3;
     let goalsFor, goalsAgainst, type;
     
     if (outcomeType === 0) {
       type = 'W';
-      goalsFor = (code + i) % 3 + 1; // 1-3 שערים
+      goalsFor = (code + i) % 3 + 1;
       goalsAgainst = (code + i) % goalsFor;
     } else if (outcomeType === 1) {
       type = 'D';
-      goalsFor = (code + i) % 3; // 0-2 שערים
+      goalsFor = (code + i) % 3;
       goalsAgainst = goalsFor;
     } else {
       type = 'L';
@@ -58,11 +57,7 @@ const generateDynamicStats = (teamName) => {
       goalsFor = (code + i) % goalsAgainst;
     }
 
-    lastResults.push({
-      opponent,
-      score: `${goalsFor} - ${goalsAgainst}`,
-      type
-    });
+    lastResults.push({ opponent, score: `${goalsFor} - ${goalsAgainst}`, type });
   }
 
   const xG_attack = parseFloat((1.1 + ((code % 10) / 15)).toFixed(2));
@@ -144,9 +139,9 @@ export default function App() {
             date: localDate,
             time: localTime,
             odds: { home: homeOdds, draw: drawOdds, away: awayOdds },
-            homeLastResults: stats.lastResults,
-            awayLastResults: awayStats.lastResults,
-            h2h: stats.h2h,
+            homeLastResults: stats.lastResults || [],
+            awayLastResults: awayStats.lastResults || [],
+            h2h: stats.h2h || { homeWins: 1, draws: 2, awayWins: 1 },
             homeXG: stats.xG_attack,
             homeExpectedConcedeXG: stats.xG_defense,
             awayXG: awayStats.xG_attack,
@@ -183,10 +178,10 @@ export default function App() {
   const calculatePrediction = (match) => {
     if (!match) return null;
 
-    let baseHomeXG = match.homeXG;
-    let baseAwayXG = match.awayXG;
+    let baseHomeXG = match.homeXG || 1.2;
+    let baseAwayXG = match.awayXG || 1.1;
 
-    const motivationDiff = match.homeMotivation - match.awayMotivation;
+    const motivationDiff = (match.homeMotivation || 3) - (match.awayMotivation || 3);
     baseHomeXG += motivationDiff * 0.10; 
     baseAwayXG -= motivationDiff * 0.10;
 
@@ -198,17 +193,18 @@ export default function App() {
       baseAwayXG *= 0.70;
     }
 
-    const impliedHomeProb = 1 / match.odds.home;
-    const impliedAwayProb = 1 / match.odds.away;
-    const totalProb = impliedHomeProb + impliedAwayProb + (1 / match.odds.draw);
+    const odds = match.odds || { home: 2.3, draw: 3.1, away: 2.5 };
+    const impliedHomeProb = 1 / odds.home;
+    const impliedAwayProb = 1 / odds.away;
+    const totalProb = impliedHomeProb + impliedAwayProb + (1 / odds.draw);
     const marketHomeProb = impliedHomeProb / totalProb;
     const marketAwayProb = impliedAwayProb / totalProb;
 
-    if (match.homeInjuries.length > 0) baseHomeXG *= (1 - (match.homeInjuries.length * 0.06));
-    if (match.awayInjuries.length > 0) baseAwayXG *= (1 - (match.awayInjuries.length * 0.06));
+    if (match.homeInjuries?.length > 0) baseHomeXG *= (1 - (match.homeInjuries.length * 0.06));
+    if (match.awayInjuries?.length > 0) baseAwayXG *= (1 - (match.awayInjuries.length * 0.06));
 
-    let finalHomeExpected = ((baseHomeXG * (1 / match.awayExpectedConcedeXG)) + (marketHomeProb * 2.2)) / 2;
-    let finalAwayExpected = ((baseAwayXG * (1 / match.homeExpectedConcedeXG)) + (marketAwayProb * 1.9)) / 2;
+    let finalHomeExpected = ((baseHomeXG * (1 / (match.awayExpectedConcedeXG || 1.0))) + (marketHomeProb * 2.2)) / 2;
+    let finalAwayExpected = ((baseAwayXG * (1 / (match.homeExpectedConcedeXG || 1.0))) + (marketAwayProb * 1.9)) / 2;
 
     let homeGoals = Math.round(finalHomeExpected);
     let awayGoals = Math.round(finalAwayExpected);
@@ -216,8 +212,8 @@ export default function App() {
     homeGoals = Math.min(Math.max(homeGoals, 0), 4);
     awayGoals = Math.min(Math.max(awayGoals, 0), 4);
 
-    let homePower = (marketHomeProb * 60) + (match.homeMotivation * 5);
-    let awayPower = (marketAwayProb * 60) + (match.awayMotivation * 5);
+    let homePower = (marketHomeProb * 60) + ((match.homeMotivation || 3) * 5);
+    let awayPower = (marketAwayProb * 60) + ((match.awayMotivation || 3) * 5);
     const totalPower = homePower + awayPower + 10;
 
     const homePercent = Math.round((homePower / totalPower) * 100);
@@ -271,7 +267,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-100" dir="rtl">
         <div className="text-center space-y-3">
           <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-sm font-semibold tracking-wide text-emerald-400">טוען תוצאות מדויקות והיסטוריית מפגשים מלאה...</p>
+          <p className="text-sm font-semibold tracking-wide text-emerald-400">מתגבר על תצורות מטמון ישנות ומעלה קוד מוגן קריסות...</p>
         </div>
       </div>
     );
@@ -287,7 +283,7 @@ export default function App() {
   }, {});
 
   const sortedDates = Object.keys(groupedMatches).sort((a, b) => {
-    return groupedMatches[a][0].rawTime - groupedMatches[b][0].rawTime;
+    return (groupedMatches[a]?.[0]?.rawTime || 0) - (groupedMatches[b]?.[0]?.rawTime || 0);
   });
 
   return (
@@ -295,12 +291,12 @@ export default function App() {
       <header className="max-w-6xl mx-auto mb-6 flex flex-col sm:flex-row justify-between items-center border-b border-slate-800 pb-4 gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">
-            מונדיאל Predictor Pro <span className="text-xs text-slate-500 font-normal">v2.8 (Full History)</span>
+            מונדיאל Predictor Pro <span className="text-xs text-slate-500 font-normal">v2.9 (Crash Proof)</span>
           </h1>
-          <p className="text-slate-400 text-sm mt-1">אנליטיקה מתקדמת מבוססת תוצאות עבר ו-xG</p>
+          <p className="text-slate-400 text-sm mt-1">גרסה מוגנת מטמון יציבה</p>
         </div>
         <button onClick={() => fetchRealOdds(true)} className="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl transition-all">
-          🔄 רענן יחסים חיים
+          🔄 רענן יחסים חיים (בצע ניקוי מלא)
         </button>
       </header>
 
@@ -315,7 +311,7 @@ export default function App() {
               </div>
               
               <div className="space-y-2 border-r-2 border-slate-800 pr-2 mr-1">
-                {groupedMatches[date].map(match => {
+                {groupedMatches[date]?.map(match => {
                   const pred = predictions[match.id];
                   return (
                     <button
@@ -344,11 +340,10 @@ export default function App() {
           ))}
         </div>
 
-        {/* טור מרכזי ושמאל: האנליזה והסטטיסטיקות המורחבות */}
+        {/* טור מרכזי ושמאל: האנליזה והסטטיסטיקות */}
         {selectedMatch && (
           <div className="lg:col-span-2 space-y-6">
             
-            {/* פנל הציון והתחזית */}
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 border border-slate-700 relative">
               <div className="flex justify-around items-center my-4 gap-1">
                 <div className="text-center w-1/3">
@@ -380,16 +375,15 @@ export default function App() {
               </div>
             </div>
 
-            {/* פנל סטטיסטיקה מורחב: תוצאות אחרונות ומפגשים ישירים */}
             <div className="bg-slate-800/80 rounded-2xl p-4 border border-slate-700 space-y-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-700/60 pb-2">📊 היסטוריית משחקים ותוצאות מדויקות (H2H & Form)</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                {/* תוצאות אחרונות של נבחרת הבית */}
+                {/* תוצאות נבחרת הבית עם מנגנון הגנה */}
                 <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 space-y-2">
                   <div className="font-bold text-emerald-400 mb-1">⏰ 5 משחקים אחרונים - {selectedMatch.homeTeam}:</div>
                   <div className="space-y-1.5 shadow-inner bg-slate-950/20 p-2 rounded-lg">
-                    {selectedMatch.homeLastResults.map((res, i) => (
+                    {(selectedMatch.homeLastResults || []).map((res, i) => (
                       <div key={i} className="flex justify-between items-center border-b border-slate-800/50 last:border-0 pb-1 last:pb-0">
                         <span className="text-slate-400">נגד {res.opponent}</span>
                         <div className="flex items-center gap-2">
@@ -398,14 +392,15 @@ export default function App() {
                         </div>
                       </div>
                     ))}
+                    {(!selectedMatch.homeLastResults || selectedMatch.homeLastResults.length === 0) && <p className="text-slate-500 text-[11px]">לחץ על כפתור הרענון למעלה לסינכרון נתונים מלא</p>}
                   </div>
                 </div>
 
-                {/* תוצאות אחרונות של נבחרת החוץ */}
+                {/* תוצאות נבחרת החוץ עם מנגנון הגנה */}
                 <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 space-y-2">
                   <div className="font-bold text-cyan-400 mb-1">⏰ 5 משחקים אחרונים - {selectedMatch.awayTeam}:</div>
                   <div className="space-y-1.5 shadow-inner bg-slate-950/20 p-2 rounded-lg">
-                    {selectedMatch.awayLastResults.map((res, i) => (
+                    {(selectedMatch.awayLastResults || []).map((res, i) => (
                       <div key={i} className="flex justify-between items-center border-b border-slate-800/50 last:border-0 pb-1 last:pb-0">
                         <span className="text-slate-400">נגד {res.opponent}</span>
                         <div className="flex items-center gap-2">
@@ -414,26 +409,26 @@ export default function App() {
                         </div>
                       </div>
                     ))}
+                    {(!selectedMatch.awayLastResults || selectedMatch.awayLastResults.length === 0) && <p className="text-slate-500 text-[11px]">לחץ על כפתור הרענון למעלה לסינכרון נתונים מלא</p>}
                   </div>
                 </div>
               </div>
 
-              {/* מאזן ראש בראש (H2H) */}
               <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 space-y-2 text-xs">
                 <div className="font-semibold text-slate-300">מאזן מפגשים ישירים היסטורי:</div>
                 <div className="flex justify-around items-center text-center bg-slate-950/50 py-2.5 rounded-xl border border-slate-800/60">
                   <div>
-                    <div className="text-emerald-400 font-bold text-base">{selectedMatch.h2h.homeWins}</div>
+                    <div className="text-emerald-400 font-bold text-base">{selectedMatch.h2h?.homeWins ?? 0}</div>
                     <div className="text-[9px] text-slate-500">ניצחונות {selectedMatch.homeTeam}</div>
                   </div>
                   <div className="border-r border-slate-800 h-6"></div>
                   <div>
-                    <div className="text-slate-400 font-bold text-base">{selectedMatch.h2h.draws}</div>
+                    <div className="text-slate-400 font-bold text-base">{selectedMatch.h2h?.draws ?? 0}</div>
                     <div className="text-[9px] text-slate-500">תוצאות תיקו</div>
                   </div>
                   <div className="border-r border-slate-800 h-6"></div>
                   <div>
-                    <div className="text-cyan-400 font-bold text-base">{selectedMatch.h2h.awayWins}</div>
+                    <div className="text-cyan-400 font-bold text-base">{selectedMatch.h2h?.awayWins ?? 0}</div>
                     <div className="text-[9px] text-slate-500">ניצחונות {selectedMatch.awayTeam}</div>
                   </div>
                 </div>
@@ -470,15 +465,15 @@ export default function App() {
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="bg-slate-900 p-1.5 rounded border border-slate-700">
                     <div className="text-[9px] text-slate-500 truncate">{selectedMatch.homeTeam}</div>
-                    <input type="number" step="0.01" value={selectedMatch.odds.home} onChange={(e) => updateMatchData('odds', e.target.value, 'home')} className="bg-transparent w-full text-center font-mono font-bold text-emerald-400 text-xs focus:outline-none mt-0.5" />
+                    <input type="number" step="0.01" value={selectedMatch.odds?.home} onChange={(e) => updateMatchData('odds', e.target.value, 'home')} className="bg-transparent w-full text-center font-mono font-bold text-emerald-400 text-xs focus:outline-none mt-0.5" />
                   </div>
                   <div className="bg-slate-900 p-1.5 rounded border border-slate-700">
                     <div className="text-[9px] text-slate-500">X (תיקו)</div>
-                    <input type="number" step="0.01" value={selectedMatch.odds.draw} onChange={(e) => updateMatchData('odds', e.target.value, 'draw')} className="bg-transparent w-full text-center font-mono font-bold text-slate-300 text-xs focus:outline-none mt-0.5" />
+                    <input type="number" step="0.01" value={selectedMatch.odds?.draw} onChange={(e) => updateMatchData('odds', e.target.value, 'draw')} className="bg-transparent w-full text-center font-mono font-bold text-slate-300 text-xs focus:outline-none mt-0.5" />
                   </div>
                   <div className="bg-slate-900 p-1.5 rounded border border-slate-700">
                     <div className="text-[9px] text-slate-500 truncate">{selectedMatch.awayTeam}</div>
-                    <input type="number" step="0.01" value={selectedMatch.odds.away} onChange={(e) => updateMatchData('odds', e.target.value, 'away')} className="bg-transparent w-full text-center font-mono font-bold text-cyan-400 text-xs focus:outline-none mt-0.5" />
+                    <input type="number" step="0.01" value={selectedMatch.odds?.away} onChange={(e) => updateMatchData('odds', e.target.value, 'away')} className="bg-transparent w-full text-center font-mono font-bold text-cyan-400 text-xs focus:outline-none mt-0.5" />
                   </div>
                 </div>
               </div>
@@ -486,8 +481,8 @@ export default function App() {
               <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700 space-y-2">
                 <h4 className="text-xs font-bold text-slate-400 uppercase">מצב פצועים משפיעי xG</h4>
                 <div className="flex gap-2">
-                  <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.homeTeam}:`); if(p) updateMatchData('homeInjuries', [...selectedMatch.homeInjuries, p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg transition-colors truncate">+ {selectedMatch.homeTeam.split(' ')[0]}</button>
-                  <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.awayTeam}:`); if(p) updateMatchData('awayInjuries', [...selectedMatch.awayInjuries, p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg transition-colors truncate">+ {selectedMatch.awayTeam.split(' ')[0]}</button>
+                  <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.homeTeam}:`); if(p) updateMatchData('homeInjuries', [...(selectedMatch.homeInjuries || []), p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg transition-colors truncate">+ {selectedMatch.homeTeam.split(' ')[0]}</button>
+                  <button onClick={() => { const p = prompt(`שם פצוע ל${selectedMatch.awayTeam}:`); if(p) updateMatchData('awayInjuries', [...(selectedMatch.awayInjuries || []), p]); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-xs py-2 rounded-lg transition-colors truncate">+ {selectedMatch.awayTeam.split(' ')[0]}</button>
                   <button onClick={() => { updateMatchData('homeInjuries', []); updateMatchData('awayInjuries', []); }} className="bg-rose-950/40 text-rose-400 border border-rose-900/50 text-xs px-3 rounded-lg hover:bg-rose-900/40">אפס</button>
                 </div>
               </div>
