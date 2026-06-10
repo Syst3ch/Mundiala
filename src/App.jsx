@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect } from 'react';
 import { getCombinedMatchData } from './api';
-import { teamNames } from './utils/teams'; // ייבוא המפה החדשה
+import { teamNames } from './teams'; // ייבוא המפה החדשה
 
 export default function App() {
   const [matches, setMatches] = useState([]);
