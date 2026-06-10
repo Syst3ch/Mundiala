@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getCombinedMatchData } from './services/api';
-import { teamNames } from './utils/teams';
+import { getCombinedMatchData } from './api';
+import { teamNames } from './teams';
 
 export default function App() {
   const [matches, setMatches] = useState([]);
