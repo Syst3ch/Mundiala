@@ -5,29 +5,25 @@ import { teamNames } from '.src/teams';
 export default function App() {
   const [matches, setMatches] = useState([]);
 
-  useEffect(() => {
-    async function loadData() {
-      // 1. בדיקה אם יש נתונים ב-Cache
-      const cachedData = localStorage.getItem('worldCupMatches');
-      const cacheTimestamp = localStorage.getItem('worldCupCacheTime');
-      const oneHour = 60 * 60 * 1000;
-
-      if (cachedData && (Date.now() - cacheTimestamp < oneHour)) {
-        setMatches(JSON.parse(cachedData));
-        return;
-      }
-
-      // 2. משיכה מה-API אם אין Cache או שהוא ישן
-      const data = await getCombinedMatchData();
-      
-      // 3. שמירה ב-Cache
-      localStorage.setItem('worldCupMatches', JSON.stringify(data));
-      localStorage.setItem('worldCupCacheTime', Date.now().toString());
-      setMatches(data);
+useEffect(() => {
+  async function loadData() {
+    const cachedData = localStorage.getItem('worldCupMatches');
+    const cacheTimestamp = localStorage.getItem('worldCupCacheTime');
+    
+    // אם יש מידע טרי מהשעה האחרונה - אל תפנה ל-API!
+    if (cachedData && (Date.now() - cacheTimestamp < 3600000)) {
+      setMatches(JSON.parse(cachedData));
+      return;
     }
 
-    loadData();
-  }, []);
+    // רק אם אין cache, תמשוך מה-API
+    const data = await getCombinedMatchData();
+    localStorage.setItem('worldCupMatches', JSON.stringify(data));
+    localStorage.setItem('worldCupCacheTime', Date.now().toString());
+    setMatches(data);
+  }
+  loadData();
+}, []);
 
   const translate = (name) => teamNames[name] || name;
 
