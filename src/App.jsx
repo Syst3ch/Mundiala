@@ -6,23 +6,26 @@ export default function App() {
   const [matches, setMatches] = useState([]);
 
 useEffect(() => {
-  async function loadData() {
-    const cachedData = localStorage.getItem('worldCupMatches');
-    const cacheTimestamp = localStorage.getItem('worldCupCacheTime');
-    
-    // אם יש מידע טרי מהשעה האחרונה - אל תפנה ל-API!
-    if (cachedData && (Date.now() - cacheTimestamp < 3600000)) {
-      setMatches(JSON.parse(cachedData));
-      return;
+  async function fetchTeamData(teamName) {
+    // בדיקה ב-Cache לפני פנייה ל-API
+    const cached = localStorage.getItem(`team_${teamName}`);
+    if (cached) {
+      console.log(`Using cache for ${teamName}`);
+      return JSON.parse(cached);
     }
 
-    // רק אם אין cache, תמשוך מה-API
-    const data = await getCombinedMatchData();
-    localStorage.setItem('worldCupMatches', JSON.stringify(data));
-    localStorage.setItem('worldCupCacheTime', Date.now().toString());
-    setMatches(data);
+    // אם אין ב-Cache, רק אז פונים ל-API
+    console.log(`Fetching from API for ${teamName}`);
+    const response = await fetch(`https://api-football-v1.p.rapidapi.com/v3/teams?name=${teamName}`, {
+       headers: { 'x-rapidapi-key': 'YOUR_KEY' }
+    });
+    
+    const data = await response.json();
+    localStorage.setItem(`team_${teamName}`, JSON.stringify(data)); // שמירה ל-Cache
+    return data;
   }
-  loadData();
+  
+  // קריאה לפונקציה
 }, []);
 
   const translate = (name) => teamNames[name] || name;
